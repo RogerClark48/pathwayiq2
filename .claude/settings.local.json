@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source venv/Scripts/activate)",
+      "Bash(python -:*)",
+      "Bash(source /c/Dev/pathwayiq/venv/Scripts/activate)",
+      "Bash(sqlite3 \"C:\\\\Dev\\\\pathwayiq\\\\gmiot.sqlite\" \"SELECT DISTINCT qual_type FROM gmiot_courses ORDER BY qual_type;\")",
+      "Bash(python3 -c \"import sqlite3; conn = sqlite3.connect\\(''gmiot.sqlite''\\); cur = conn.cursor\\(\\); cur.execute\\(''SELECT DISTINCT qual_type FROM gmiot_courses ORDER BY qual_type;''\\); rows = cur.fetchall\\(\\); [print\\(r[0]\\) for r in rows]\")"
+    ]
+  }
+}

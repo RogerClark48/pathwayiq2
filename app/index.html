@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>PathwayIQ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header id="header">
+    <div class="header-left">
+      <span class="badge">GM IoT</span>
+      <span class="app-name">PathwayIQ</span>
+    </div>
+    <div class="header-right">
+      <button class="session-btn" title="Saved items">&#8862;</button>
+    </div>
+  </header>
+
+  <main id="central-zone">
+
+    <div id="start-screen">
+      <p class="section-label">Explore by subject area</p>
+      <div id="subject-grid" class="tile-grid"></div>
+
+      <p class="section-label" id="qual-label">Refine by qualification</p>
+      <div id="qual-grid" class="tile-grid qual-grid"></div>
+
+      <p class="pathway-trigger-wrap"><a href="#" id="pathway-link" class="pathway-link">How do qualifications connect? →</a></p>
+
+      <div class="chat-invite">Not sure where to start? Tell me what you're interested in.</div>
+    </div>
+
+    <div id="thread"></div>
+
+  </main>
+
+  <footer id="bottom-bar">
+    <p class="llm-line">Ask me anything about courses and careers</p>
+    <div class="input-row">
+      <input type="text" id="chat-input" placeholder="Type your question…" autocomplete="off">
+      <button id="send-btn">Send</button>
+    </div>
+  </footer>
+
+  <!-- Tooltip popup (singleton, moved by JS) -->
+  <div id="tooltip" class="tooltip hidden"></div>
+
+  <!-- Pathway modal -->
+  <div id="pathway-modal" class="pathway-modal hidden" role="dialog" aria-modal="true" aria-label="Qualification pathway map">
+    <div class="pathway-panel">
+      <div class="pathway-panel-header">
+        <span class="pathway-panel-title">Qualification pathways</span>
+        <button class="pathway-close" id="pathway-close" aria-label="Close">✕</button>
+      </div>
+      <p class="pathway-intro">Tap any qualification to find out more.</p>
+      <div class="pathway-map-wrap">
+
+        <svg id="pathway-svg" viewBox="0 0 385 615" width="100%" class="pathway-svg" aria-hidden="true">
+          <defs>
+            <marker id="am-teal"   markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#0d9488"/></marker>
+            <marker id="am-amber"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#d97706"/></marker>
+            <marker id="am-grey"   markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#9ca3af"/></marker>
+            <marker id="am-purple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#7c3aed"/></marker>
+          </defs>
+
+          <!-- ── Arrows (drawn under nodes) ─────────────────────────────── -->
+
+          <!-- GCSEs → L3 nodes -->
+          <line x1="69.5"  y1="73" x2="69.5"  y2="130" stroke="#0d9488" stroke-width="2"   marker-end="url(#am-teal)"/>
+          <line x1="192.5" y1="73" x2="192.5" y2="130" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#am-grey)"/>
+          <line x1="315.5" y1="73" x2="315.5" y2="130" stroke="#d97706" stroke-width="2"   marker-end="url(#am-amber)"/>
+
+          <!-- T Level → HNC/HND -->
+          <line x1="69.5" y1="213" x2="69.5" y2="270" stroke="#0d9488" stroke-width="2" marker-end="url(#am-teal)"/>
+          <!-- A Levels → HNC/HND (cross-track, dashed) -->
+          <line x1="192.5" y1="213" x2="74" y2="270" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#am-grey)"/>
+          <!-- A Levels → Foundation Degree -->
+          <line x1="192.5" y1="213" x2="192.5" y2="270" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#am-grey)"/>
+          <!-- Apprenticeship → Higher Apprenticeship -->
+          <line x1="315.5" y1="213" x2="315.5" y2="270" stroke="#d97706" stroke-width="2" marker-end="url(#am-amber)"/>
+
+          <!-- L4–5 → Bachelor's -->
+          <line x1="69.5"  y1="353" x2="69.5"  y2="410" stroke="#0d9488" stroke-width="2"   marker-end="url(#am-teal)"/>
+          <line x1="192.5" y1="353" x2="192.5" y2="410" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#am-grey)"/>
+          <line x1="315.5" y1="353" x2="315.5" y2="410" stroke="#d97706" stroke-width="2"   marker-end="url(#am-amber)"/>
+
+          <!-- Bachelor's → Master's -->
+          <line x1="192.5" y1="475" x2="192.5" y2="532" stroke="#7c3aed" stroke-width="2" marker-end="url(#am-purple)"/>
+
+          <!-- ── Nodes ────────────────────────────────────────────────────── -->
+
+          <!-- GCSEs / Level 2 (entry, full-width) -->
+          <g class="pathway-node" data-node="gcse" role="button" tabindex="0" aria-label="GCSEs / Level 2">
+            <rect x="12" y="10" width="361" height="62" rx="10" fill="#f8fafc" stroke="#374151" stroke-width="1.5"/>
+            <text x="192.5" y="35" text-anchor="middle" font-weight="700" font-size="14" fill="#1f2937">GCSEs / Level 2</text>
+            <text x="192.5" y="53" text-anchor="middle" font-size="11" fill="#6b7280">Starting point · Level 2</text>
+          </g>
+
+          <!-- Track labels -->
+          <text x="69.5"  y="124" text-anchor="middle" font-size="9" fill="#0d9488" font-style="italic">Technical</text>
+          <text x="192.5" y="124" text-anchor="middle" font-size="9" fill="#9ca3af" font-style="italic">Academic</text>
+          <text x="315.5" y="124" text-anchor="middle" font-size="9" fill="#d97706" font-style="italic">Work-based</text>
+
+          <!-- T Level (technical, teal) -->
+          <g class="pathway-node" data-node="t_level" role="button" tabindex="0" aria-label="T Level">
+            <rect x="12" y="132" width="115" height="80" rx="8" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"/>
+            <text x="69.5" y="158" text-anchor="middle" font-weight="700" font-size="13" fill="#0d9488">T Level</text>
+            <text x="69.5" y="176" text-anchor="middle" font-size="10" fill="#0d9488" opacity="0.85">Level 3</text>
+            <text x="69.5" y="192" text-anchor="middle" font-size="10" fill="#0d9488" opacity="0.85">2 years</text>
+          </g>
+
+          <!-- A Levels (academic, de-emphasised) -->
+          <g class="pathway-node pathway-node--muted" data-node="a_levels" role="button" tabindex="0" aria-label="A Levels">
+            <rect x="135" y="132" width="115" height="80" rx="8" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+            <text x="192.5" y="158" text-anchor="middle" font-weight="700" font-size="13" fill="#9ca3af">A Levels</text>
+            <text x="192.5" y="176" text-anchor="middle" font-size="10" fill="#9ca3af">Level 3</text>
+            <text x="192.5" y="192" text-anchor="middle" font-size="10" fill="#9ca3af">2 years</text>
+          </g>
+
+          <!-- Apprenticeship (work-based, amber) -->
+          <g class="pathway-node" data-node="apprenticeship" role="button" tabindex="0" aria-label="Apprenticeship">
+            <rect x="258" y="132" width="115" height="80" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+            <text x="315.5" y="162" text-anchor="middle" font-weight="700" font-size="11.5" fill="#d97706">Apprenticeship</text>
+            <text x="315.5" y="180" text-anchor="middle" font-size="10" fill="#d97706" opacity="0.85">Level 3</text>
+            <text x="315.5" y="196" text-anchor="middle" font-size="10" fill="#d97706" opacity="0.85">earn &amp; learn</text>
+          </g>
+
+          <!-- HNC / HND (technical, teal) -->
+          <g class="pathway-node" data-node="hnc_hnd" role="button" tabindex="0" aria-label="HNC / HND">
+            <rect x="12" y="272" width="115" height="80" rx="8" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"/>
+            <text x="69.5" y="298" text-anchor="middle" font-weight="700" font-size="13" fill="#0d9488">HNC / HND</text>
+            <text x="69.5" y="316" text-anchor="middle" font-size="10" fill="#0d9488" opacity="0.85">Level 4–5</text>
+            <text x="69.5" y="330" text-anchor="middle" font-size="10" fill="#0d9488" opacity="0.85">1–2 years</text>
+          </g>
+
+          <!-- Foundation Degree (academic, grey) -->
+          <g class="pathway-node" data-node="foundation_degree" role="button" tabindex="0" aria-label="Foundation Degree">
+            <rect x="135" y="272" width="115" height="80" rx="8" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+            <text x="192.5" y="296" text-anchor="middle" font-weight="700" font-size="12" fill="#4b5563">Foundation</text>
+            <text x="192.5" y="311" text-anchor="middle" font-weight="700" font-size="12" fill="#4b5563">Degree</text>
+            <text x="192.5" y="328" text-anchor="middle" font-size="10" fill="#6b7280">Level 5</text>
+            <text x="192.5" y="342" text-anchor="middle" font-size="10" fill="#6b7280">2 years</text>
+          </g>
+
+          <!-- Higher Apprenticeship (work-based, amber) -->
+          <g class="pathway-node" data-node="higher_apprenticeship" role="button" tabindex="0" aria-label="Higher Apprenticeship">
+            <rect x="258" y="272" width="115" height="80" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+            <text x="315.5" y="296" text-anchor="middle" font-weight="700" font-size="12" fill="#d97706">Higher</text>
+            <text x="315.5" y="311" text-anchor="middle" font-weight="700" font-size="11.5" fill="#d97706">Apprenticeship</text>
+            <text x="315.5" y="328" text-anchor="middle" font-size="10" fill="#d97706" opacity="0.85">Level 4–6</text>
+            <text x="315.5" y="342" text-anchor="middle" font-size="10" fill="#d97706" opacity="0.85">earn &amp; learn</text>
+          </g>
+
+          <!-- Bachelor's Degree (degree, purple) -->
+          <g class="pathway-node" data-node="bachelors" role="button" tabindex="0" aria-label="Bachelor's Degree">
+            <rect x="12" y="412" width="361" height="62" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+            <text x="192.5" y="436" text-anchor="middle" font-weight="700" font-size="14" fill="#7c3aed">Bachelor's Degree</text>
+            <text x="192.5" y="455" text-anchor="middle" font-size="11" fill="#7c3aed" opacity="0.85">Level 6 · 3–4 years</text>
+          </g>
+
+          <!-- Master's Degree (degree, purple) -->
+          <g class="pathway-node" data-node="masters" role="button" tabindex="0" aria-label="Master's Degree">
+            <rect x="12" y="534" width="361" height="62" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+            <text x="192.5" y="558" text-anchor="middle" font-weight="700" font-size="14" fill="#7c3aed">Master's Degree</text>
+            <text x="192.5" y="577" text-anchor="middle" font-size="11" fill="#7c3aed" opacity="0.85">Level 7 · 1–2 years</text>
+          </g>
+
+        </svg>
+
+      </div><!-- /.pathway-map-wrap -->
+      <div id="pathway-explanation" class="pathway-explanation" hidden></div>
+    </div><!-- /.pathway-panel -->
+  </div><!-- /#pathway-modal -->
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+course_id,course_title,provider,subject_area,level,qual_type,mode,course_url,notes
+1,Access to Higher Education Diploma – Social Science,Bury College,Health & Wellbeing,3,Access to HE,,https://burycollege.ac.uk/courses/adult-course/access-to-higher-education-diploma-social-science,
+2,Digital Technologies HTQ/HNC,Bury College,Computing & Digital Technologies,4,HNC/HTQ,,https://burycollege.ac.uk/courses/university-centre/digital-technologies-htq-hnc,
+3,Digital Support and Security – T Level,Bury College,Computing & Digital Technologies,3,T Level,FT,https://gmiot.ac.uk/digital-support-and-security-t-level-lvl-3/,
+4,Digital Software Development – T Level,Bury College,Computing & Digital Technologies,3,T Level,FT,https://gmiot.ac.uk/digital-software-development-t-level-lvl-3/,
+5,Sport and Exercise Science,Bury College,Health & Wellbeing,4,HNC,,https://gmiot.ac.uk/sport-and-exercise-science-hnc-lvl-4/,
+6,Social and Community Work,Bury College,Health & Wellbeing,4,HNC,,https://gmiot.ac.uk/social-and-community-work-hnc-lvl-4/,
+7,Healthcare Practice,Bury College,Health & Wellbeing,4,HNC/HTQ,,https://gmiot.ac.uk/healthcare-practice-htq-hnc-lvl-4/,
+8,Community Coaching for England,Bury College,Health & Wellbeing,4,HNC/HTQ,,https://gmiot.ac.uk/community-coaching-for-england-htq-hnc-lvl-4/,
+9,Supporting Therapy Teams – T Level,Bury College,Health & Wellbeing,3,T Level,FT,https://gmiot.ac.uk/supporting-therapy-teams-t-level-lvl-3/,
+10,Supporting the Adult Nursing Team – T Level,Bury College,Health & Wellbeing,3,T Level,FT,https://gmiot.ac.uk/supporting-the-adult-nursing-team-t-level-lvl-3/,
+11,Nursing Midwifery and Allied Health Professions – Access to HE Diploma,Bury College,Health & Wellbeing,3,Access to HE,,https://gmiot.ac.uk/nursing-midwifery-and-allied-health-professions-access-to-he-diploma-lvl-3/,
+12,Access to HE Diploma (Computing and Digital Technology),Trafford & Stockport College,Computing & Digital Technologies,3,Access to HE,FT,https://trafford.tscg.ac.uk/our-courses/detail/?ccid=TFP-AH3D-1600,
+13,HNC Mechatronics for England,Trafford & Stockport College,Advanced Engineering & Manufacturing,4,HNC,FT,https://trafford.tscg.ac.uk/our-courses/detail/?ccid=TFQ-HM4H-1700,
+14,HNC Mechatronics for England,Trafford & Stockport College,Advanced Engineering & Manufacturing,4,HNC,PT,https://trafford.tscg.ac.uk/our-courses/detail/?ccid=TPQ-HM4H-1700,
+15,HNC Electrical and Electronic Engineering for England,Trafford & Stockport College,Advanced Engineering & Manufacturing,4,HNC,FT,https://trafford.tscg.ac.uk/our-courses/detail/?ccid=TFQ-HM4H-1800,
+16,HNC Electrical and Electronic Engineering for England,Trafford & Stockport College,Advanced Engineering & Manufacturing,4,HNC,PT,https://trafford.tscg.ac.uk/our-courses/detail/?ccid=TPQ-HM4H-1800,
+17,HNC Mechanical Engineering for England,Trafford & Stockport College,Advanced Engineering & Manufacturing,4,HNC,PT,https://trafford.tscg.ac.uk/our-courses/detail/?ccid=TPQ-HM4H-1900,
+18,HNC Construction Management for England (Site Supervisor),Trafford & Stockport College,Construction & The Built Environment,4,HNC/HTQ,FT,https://gmiot.ac.uk/hnc-construction-management-for-england-site-supervisor-full-time/,
+19,HNC Construction Management for England (Site Supervisor),Trafford & Stockport College,Construction & The Built Environment,4,HNC/HTQ,PT,https://gmiot.ac.uk/hnc-construction-management-for-england-site-supervisor-part-time/,
+20,HNC Construction Management for England (Design and Build Technician),Trafford & Stockport College,Construction & The Built Environment,4,HNC/HTQ,FT,https://gmiot.ac.uk/hnc-construction-management-for-england-design-and-build-technician-full-time/,
+21,HNC Construction Management for England (Design and Build Technician),Trafford & Stockport College,Construction & The Built Environment,4,HNC/HTQ,PT,https://gmiot.ac.uk/hnc-construction-management-for-england-design-and-build-technician-part-time/,
+22,HNC Construction and Civil Engineering,Trafford & Stockport College,Construction & The Built Environment,4,HNC,FT,https://gmiot.ac.uk/hnc-construction-and-civil-engineering-full-time/,
+23,HNC Construction and Civil Engineering,Trafford & Stockport College,Construction & The Built Environment,4,HNC,PT,https://gmiot.ac.uk/hnc-construction-and-civil-engineering-part-time/,
+24,HNC Building Services Engineering for England (HVAC),Trafford & Stockport College,Construction & The Built Environment,4,HNC,PT,https://gmiot.ac.uk/hnc-building-services-engineering-for-england-hvac-part-time/,
+25,HNC Building Services Engineering for England (Electrical),Trafford & Stockport College,Construction & The Built Environment,4,HNC,PT,https://gmiot.ac.uk/hnc-building-services-engineering-for-england-electrical-part-time/,
+26,HND Computing for England (Software Engineering),Trafford & Stockport College,Computing & Digital Technologies,5,HND,FT,https://gmiot.ac.uk/hnd-computing-for-england-software-engineering-full-time/,
+27,HND Computing for England (Cyber Security),Trafford & Stockport College,Computing & Digital Technologies,5,HND,FT,https://gmiot.ac.uk/hnd-computing-for-england-cyber-security-full-time/,
+28,BSc (Hons) Computing (Cyber Security) Top-Up,Trafford & Stockport College,Computing & Digital Technologies,6,BSc Hons,FT,https://gmiot.ac.uk/bsc-hons-computing-cyber-security-top-up-full-time/,
+29,FdSc Assistant Practitioner Health and Social Care,Trafford & Stockport College,Health & Wellbeing,5,FdSc,PT,https://gmiot.ac.uk/fdsc-assistant-practitioner-health-and-social-care-part-time/,
+30,Electrical/Electronic Engineering,Tameside College,Advanced Engineering & Manufacturing,4,HNC/HTQ,FT,https://he.tameside.ac.uk/course/htq-in-electricalelectronic-engineering-year1-pt-cert,Note: URL says PT but listed as FT in course title
+31,Electrical/Electronic Engineering,Tameside College,Advanced Engineering & Manufacturing,4,HNC/HTQ,PT,https://he.tameside.ac.uk/course/htq-in-electricalelectronic-engineering-year1-pt-cert,
+32,Mechanical Engineering,Tameside College,Advanced Engineering & Manufacturing,4,HNC/HTQ,FT,https://he.tameside.ac.uk/course/htq-in-mechanical-engineering-1-year-ft-cert,
+33,Mechanical Engineering,Tameside College,Advanced Engineering & Manufacturing,4,HNC/HTQ,PT,https://he.tameside.ac.uk/course/htq-in-mechanical-engineering-year1-pt-cert,
+34,Computing (Cyber Route),Tameside College,Computing & Digital Technologies,4,HNC,,https://he.tameside.ac.uk/course/higher-national-certificate-in-computing-cyber-security,
+35,Computing (General Route),Tameside College,Computing & Digital Technologies,4,HNC,,https://he.tameside.ac.uk/course/higher-national-certificate-in-computing-general,
+36,Introduction to Fundamentals of AI,Tameside College,Short Courses,,,, https://www.tameside.ac.uk/pages/course_info.aspx?x=182474,
+37,Cyber Security – Short Course / HE Unit,Tameside College,Short Courses,,,, https://gmiot.ac.uk/cyber-security-short-course-he-unit/,
+38,Principles of Sustainability,Tameside College,Short Courses,,,,https://gmiot.ac.uk/principles-of-sustainability-short-course/,
+39,Sustainable Business Practices,Tameside College,Short Courses,,,,https://www.tameside.ac.uk/pages/course_info.aspx?x=182476,
+40,HND/HTQ Modern Methods of Construction,Wigan & Leigh College,Construction & The Built Environment,5,HND/HTQ,PT,https://gmiot.ac.uk/modern-methods-of-construction/,
+41,HNC/HND Esports,Wigan & Leigh College,Digital & Creative Media,4,HNC/HND,FT,https://gmiot.ac.uk/hnc-d-esports/,
+42,BA (Hons) Creative Practitioner (Graphics),Wigan & Leigh College,Digital & Creative Media,6,BA Hons,FT,https://gmiot.ac.uk/ba-hons-creative-practioner/,Top-up degree (1 year)
+43,FdA Creative Industries – Graphic Design,Wigan & Leigh College,Digital & Creative Media,5,FdA,FT,https://gmiot.ac.uk/fda-creative-industries-graphic-design/,
+44,HTQ HND Digital Technologies & AI Solutions and Applications,Wigan & Leigh College,Computing & Digital Technologies,5,HND/HTQ,FT,https://gmiot.ac.uk/htq-hnd-digital-technologies-artificial-intelligence-solutions-and-applications/,
+45,Mechanical Engineering,Wigan & Leigh College,Advanced Engineering & Manufacturing,4,HNC/HTQ,FT,https://gmiot.ac.uk/mechanical-engineering-full-time-hnc-htq-lvl-4/,
+46,Mechanical Engineering,Wigan & Leigh College,Advanced Engineering & Manufacturing,4,HNC/HTQ,PT,https://gmiot.ac.uk/mechanical-engineering-part-time-hnc-htq-lvl-4/,
+47,Mechanical Engineering,Wigan & Leigh College,Advanced Engineering & Manufacturing,5,HND/HTQ,FT,https://gmiot.ac.uk/mechanical-engineering-full-time-hnd-htq-lvl-5/,
+48,Electrical and Electronic Engineering,Wigan & Leigh College,Advanced Engineering & Manufacturing,5,HND/HTQ,,https://gmiot.ac.uk/electrical-and-electronic-engineering-hnd-htq-lvl-5/,
+49,Electrical Systems Engineering,Wigan & Leigh College,Advanced Engineering & Manufacturing,4,HNC/HTQ,,https://gmiot.ac.uk/electrical-systems-engineering-hnc-htq-lvl-4/,
+50,Automation and Control Engineering,Wigan & Leigh College,Advanced Engineering & Manufacturing,4,HNC/HTQ,,https://gmiot.ac.uk/automation-and-control-engineering-hnc-htq-lvl-4/,
+51,Construction and Civil Engineering,Wigan & Leigh College,Advanced Engineering & Manufacturing,4,HNC,,https://gmiot.ac.uk/construction-and-civil-engineering-hnc-level-4/,Listed under Engineering not Construction on GMIoT
+52,Mechanical and Manufacturing Engineering Top-up,Wigan & Leigh College,Advanced Engineering & Manufacturing,6,BEng Hons,,https://gmiot.ac.uk/mechanical-and-manufacturing-engineering-top-up-beng-hons-lvl-6/,
+53,Electrical & Electronic Engineering Top-up,Wigan & Leigh College,Advanced Engineering & Manufacturing,6,BEng Hons,,https://gmiot.ac.uk/electrical-electronic-engineering-top-up-beng-hons-lvl-6/,
+54,Construction Management (Site Supervisor),Wigan & Leigh College,Construction & The Built Environment,4,HNC/HTQ,,https://gmiot.ac.uk/construction-management-construction-site-supervisor-hnc-htq-lvl-4/,
+55,Construction Management (Design and Build Technician),Wigan & Leigh College,Construction & The Built Environment,4,HNC/HTQ,,https://gmiot.ac.uk/construction-management-construction-design-and-build-technician-hnc-htq-lvl-4/,
+56,Construction Management (Site Supervisor),Wigan & Leigh College,Construction & The Built Environment,5,HND/HTQ,,https://gmiot.ac.uk/construction-management-construction-site-supervisor-hnd-htq-lvl-5/,
+57,Construction Management (Design and Build Technician),Wigan & Leigh College,Construction & The Built Environment,5,HND/HTQ,,https://gmiot.ac.uk/construction-management-construction-design-and-build-technician-hnd-htq-lvl-5/,
+58,Quantity Surveying,Wigan & Leigh College,Construction & The Built Environment,4,HNC/HTQ,,https://gmiot.ac.uk/quantity-surveying-hnc-htq-lvl-4/,
+59,Electronic & Electrical Engineering Apprenticeships,Wigan & Leigh College,Advanced Engineering & Manufacturing,4,Apprenticeship,,https://www.wigan-leigh.ac.uk/subject/electrical-electronic-engineering/#subject-apprenticeships,Level unconfirmed – links to subject page not specific course
+60,Mechanical Engineering Apprenticeships,Wigan & Leigh College,Advanced Engineering & Manufacturing,4,Apprenticeship,,https://www.wigan-leigh.ac.uk/subject/mechanical-engineering/#subject-apprenticeships,Level unconfirmed – links to subject page not specific course
+61,Construction & Built Environment Apprenticeships,Wigan & Leigh College,Construction & The Built Environment,4,Apprenticeship,,https://www.wigan-leigh.ac.uk/subject/civil-engineering-construction-the-built-environment/#subject-apprenticeships,Level unconfirmed – links to subject page not specific course
+62,City & Guilds Level 4 Award – Diagnosis and Rectification of Faults in Electric and Hybrid Vehicles,Wigan & Leigh College,Advanced Engineering & Manufacturing,4,Award,,https://gmiot.ac.uk/city-guilds-level-4-award-in-diagnosis-and-rectification-of-faults-in-electric-and-hybrid-vehicles-7290-04/,
+63,Data Analyst Higher Apprenticeship,Ada College,Computing & Digital Technologies,4,Apprenticeship,,https://gmiot.ac.uk/data-analyst-higher-apprentice/,L4 with optional top-up to L6 BSc
+64,Software Developer Higher Apprenticeship,Ada College,Computing & Digital Technologies,4,Apprenticeship,,https://gmiot.ac.uk/software-developer-higher-degree-apprenticeship/,L4 with optional top-up to L6 BSc
+65,Digital & Technology Solutions Professional Degree Apprenticeship,Ada College,Computing & Digital Technologies,6,Apprenticeship,,https://gmiot.ac.uk/digital-technology-solutions-professional-degree-apprenticeship/,
+66,DipHE Data Science,University of Salford,Computing & Digital Technologies,5,DipHE,FT/PT,https://www.salford.ac.uk/courses/undergraduate/data-science,Possible duplicate with course_id 67 – different Salford URL slugs
+67,Data Science DipHE,University of Salford,Computing & Digital Technologies,5,DipHE,FT/PT,https://www.salford.ac.uk/courses/undergraduate/diphe-data-science,Possible duplicate with course_id 66 – confirm with Salford
+68,Data Science MSc/PgDip,University of Salford,Computing & Digital Technologies,7,MSc,,https://gmiot.ac.uk/data-science-msc-pgdip-lvl-5/,GMIoT labels as Lvl 5 but MSc is L7 – query with Salford
+69,CertHE Data Analyst,University of Salford,Computing & Digital Technologies,4,CertHE,FT/PT,https://www.salford.ac.uk/courses/undergraduate/certhe-data-analyst,
+70,Digital and Software Technology DipHE,University of Salford,Computing & Digital Technologies,5,DipHE,FT/PT,https://www.salford.ac.uk/courses/undergraduate/digital-and-software-technologyy,Note: typo in Salford URL slug (technologyy)
+71,CertHE Digital and Software Technology,University of Salford,Computing & Digital Technologies,4,CertHE,,https://www.salford.ac.uk/courses/undergraduate/certhe-digital-and-software-technology,
+72,DipHE Creative and Digital Media,University of Salford,Digital & Creative Media,5,DipHE,FT/PT,https://gmiot.ac.uk/creative-and-digital-media-diphe-lvl-5/,
+73,CertHE Creative and Digital Media,University of Salford,Digital & Creative Media,4,CertHE,FT/PT,https://www.salford.ac.uk/courses/undergraduate/creative-and-digital-media-0,
+74,DipHE Social Media Content Creation,University of Salford,Digital & Creative Media,5,DipHE,FT/PT,https://gmiot.ac.uk/social-media-content-creation-diphe-lvl-5/,
+75,CertHE Social Media Content Creation,University of Salford,Digital & Creative Media,4,CertHE,FT/PT,https://www.salford.ac.uk/courses/undergraduate/social-media-content-creation-0,
+76,DipHE Esports Enterprise and Management,University of Salford,Digital & Creative Media,5,DipHE,FT,https://www.salford.ac.uk/courses/undergraduate/esports-enterprise-and-management-0,
+77,CertHE Construction Project Management,University of Salford,Construction & The Built Environment,4,CertHE,FT/PT,https://www.salford.ac.uk/courses/undergraduate/certhe-construction-project-management,
+78,Construction Project Management CertHE,University of Salford,Construction & The Built Environment,4,CertHE,,https://gmiot.ac.uk/construction-project-management-certhe-lvl-4/,Possible duplicate with course_id 77
+79,CertHE Quantity Surveying,University of Salford,Construction & The Built Environment,4,CertHE,FT/PT,https://www.salford.ac.uk/courses/undergraduate/certhe-quantity-surveying,Deduplicated – two identical listings in source
+80,Construction Quantity Surveying Technician Apprenticeship,University of Salford,Construction & The Built Environment,4,Apprenticeship,,https://gmiot.ac.uk/construction-quantity-surveying-technician-apprenticeship-lvl-4/,Also listed via salford.ac.uk direct link – deduplicated
+81,Construction Site Supervisor Apprenticeship,University of Salford,Construction & The Built Environment,4,Apprenticeship,,https://gmiot.ac.uk/construction-site-supervisor-apprenticeship-lvl-4/,Also listed via salford.ac.uk direct link – deduplicated
+82,Nursing Associate FdSc,University of Salford,Health & Wellbeing,5,FdSc,,https://gmiot.ac.uk/nursing-associate-fdsc-lvl-5/,
+83,Nursing Associate Higher Apprenticeship,University of Salford,Health & Wellbeing,5,Apprenticeship,,https://gmiot.ac.uk/nursing-associate-higher-apprenticeship/,
