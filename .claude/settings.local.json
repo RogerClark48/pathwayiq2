@@ -5,7 +5,15 @@
       "Bash(python -:*)",
       "Bash(source /c/Dev/pathwayiq/venv/Scripts/activate)",
       "Bash(sqlite3 \"C:\\\\Dev\\\\pathwayiq\\\\gmiot.sqlite\" \"SELECT DISTINCT qual_type FROM gmiot_courses ORDER BY qual_type;\")",
-      "Bash(python3 -c \"import sqlite3; conn = sqlite3.connect\\(''gmiot.sqlite''\\); cur = conn.cursor\\(\\); cur.execute\\(''SELECT DISTINCT qual_type FROM gmiot_courses ORDER BY qual_type;''\\); rows = cur.fetchall\\(\\); [print\\(r[0]\\) for r in rows]\")"
+      "Bash(python3 -c \"import sqlite3; conn = sqlite3.connect\\(''gmiot.sqlite''\\); cur = conn.cursor\\(\\); cur.execute\\(''SELECT DISTINCT qual_type FROM gmiot_courses ORDER BY qual_type;''\\); rows = cur.fetchall\\(\\); [print\\(r[0]\\) for r in rows]\")",
+      "Bash(venv/Scripts/python.exe -c \"import sqlite3; conn = sqlite3.connect\\(''se_data.db''\\); print\\(conn.execute\\(''PRAGMA table_info\\(se_occupations\\)''\\).fetchall\\(\\)\\); print\\(''row count:'', conn.execute\\(''SELECT COUNT\\(*\\) FROM se_occupations''\\).fetchone\\(\\)[0]\\)\")",
+      "Bash(venv/Scripts/python.exe scripts/pull_se_typical_titles.py)",
+      "Bash(venv/Scripts/python.exe -c \":*)",
+      "Bash(venv/Scripts/python.exe -c \"import sqlite3; conn = sqlite3.connect\\(''job_roles_asset.db''\\); conn.execute\\(''UPDATE jobs SET se_std_code = NULL, se_match_score = NULL''\\); conn.commit\\(\\); print\\(''Reset done.''\\)\")",
+      "Bash(venv/Scripts/python.exe scripts/tag_stdcodes.py)",
+      "Bash(ls C:/Dev/pathwayiq2/*.db)",
+      "Bash(xargs sed:*)",
+      "Bash(timeout 12 venv/Scripts/python.exe api.py)"
     ]
   }
 }

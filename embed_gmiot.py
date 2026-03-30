@@ -27,7 +27,7 @@ load_dotenv()
 
 BASE_DIR    = Path(__file__).parent
 GMIOT_DB    = BASE_DIR / "gmiot.sqlite"
-JOBS_DB     = BASE_DIR / "emiot_jobs_asset.db"
+JOBS_DB     = BASE_DIR / "job_roles_asset.db"
 CHROMA_PATH = str(BASE_DIR / "chroma_store")
 
 VOYAGE_MODEL     = "voyage-3.5"

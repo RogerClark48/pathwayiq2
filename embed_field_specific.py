@@ -30,7 +30,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 CHROMA_PATH = r"C:\Dev\pathwayiq\chroma_store"
 GMIOT_DB    = r"C:\Dev\pathwayiq\gmiot.sqlite"
-JOBS_DB     = r"C:\Dev\pathwayiq\emiot_jobs_asset.db"
+JOBS_DB     = r"C:\Dev\pathwayiq\job_roles_asset.db"
 VOYAGE_MODEL = "voyage-3.5"
 VOYAGE_DIMS  = 1024
 BATCH_SIZE   = 64

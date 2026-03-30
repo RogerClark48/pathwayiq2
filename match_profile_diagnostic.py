@@ -30,7 +30,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 CHROMA_PATH = r"C:\Dev\pathwayiq\chroma_store"
 GMIOT_DB    = r"C:\Dev\pathwayiq\gmiot.sqlite"
-JOBS_DB     = r"C:\Dev\pathwayiq\emiot_jobs_asset.db"
+JOBS_DB     = r"C:\Dev\pathwayiq\job_roles_asset.db"
 TOP_N       = 10
 
 # ---------------------------------------------------------------------------

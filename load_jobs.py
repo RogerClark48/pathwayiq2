@@ -3,7 +3,7 @@ import chromadb
 import ollama
 
 # Connect to the jobs database
-DB_PATH = r"C:\Dev\emiot-pathway-explorer\emiot_jobs_asset.db"
+DB_PATH = r"C:\Dev\emiot-pathway-explorer\job_roles_asset.db"
 CHROMA_PATH = r"C:\Dev\pathwayiq\chroma_store"
 
 print("Connecting to jobs database...")

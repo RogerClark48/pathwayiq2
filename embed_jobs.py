@@ -3,7 +3,7 @@ import sqlite3
 import chromadb
 import ollama
 
-DB_PATH = r"C:\Dev\pathwayiq\emiot_jobs_asset.db"
+DB_PATH = r"C:\Dev\pathwayiq\job_roles_asset.db"
 CHROMA_PATH = r"C:\Dev\pathwayiq\chroma_store"
 
 TEST_MODE = False  # Set True to limit to 10 records and print parse debug for the first one

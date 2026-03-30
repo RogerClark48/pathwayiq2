@@ -16,10 +16,11 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-CHROMA_PATH        = r"C:\Dev\pathwayiq\chroma_store"
-COURSES_DB         = r"C:\Dev\pathwayiq\emiot.sqlite"
-GMIOT_DB           = r"C:\Dev\pathwayiq\gmiot.sqlite"
-JOBS_DB            = r"C:\Dev\pathwayiq\emiot_jobs_asset.db"
+CHROMA_PATH        = r"C:\Dev\pathwayiq2\chroma_store"
+COURSES_DB         = r"C:\Dev\pathwayiq\emiot.sqlite"   # v1 only — dead in v2, do not use
+GMIOT_DB           = r"C:\Dev\pathwayiq2\gmiot.sqlite"
+JOBS_DB            = r"C:\Dev\pathwayiq2\job_roles_asset.db"
+CONNECTIONS_DB     = r"C:\Dev\pathwayiq2\connections.db"
 VOYAGE_MODEL       = "voyage-3.5"
 VOYAGE_DIMS        = 1024
 MIN_SCORE                = 50   # recalibrated for Voyage AI voyage-3.5 (was 65 for nomic-embed-text)
@@ -1619,6 +1620,59 @@ def search_jobs():
 def course_careers(course_id):
     limit = min(int(request.args.get("limit", 3)), 20)
 
+    # --- Connections table fast path ---
+    if os.path.exists(CONNECTIONS_DB):
+        try:
+            cconn = sqlite3.connect(CONNECTIONS_DB)
+            rows = cconn.execute(
+                """SELECT job_id, semantic_score, skills_score
+                   FROM course_job_connections
+                   WHERE course_id = ?
+                   ORDER BY semantic_score DESC
+                   LIMIT ?""",
+                (course_id, limit),
+            ).fetchall()
+            cconn.close()
+
+            if rows:
+                # Fetch course name for response
+                stored_meta = courses_col.get(
+                    ids=[f"{course_id}_overview"], include=["metadatas"]
+                )
+                course_name = (
+                    stored_meta["metadatas"][0].get("course_name")
+                    if stored_meta["ids"] else None
+                )
+
+                results = []
+                for job_id, semantic_score, skills_score in rows:
+                    jid  = str(job_id)
+                    db   = job_row(jid)
+                    meta_hit = jobs_col.get(
+                        ids=[f"{jid}_overview"], include=["metadatas"]
+                    )
+                    if not meta_hit["ids"]:
+                        continue
+                    meta = meta_hit["metadatas"][0]
+                    job  = format_job(meta, db, semantic_score)
+                    job["skills_score"] = skills_score
+                    caution = (
+                        (semantic_score - skills_score) > CAUTION_DIVERGENCE_THRESHOLD
+                        if skills_score is not None else False
+                    )
+                    job["caution"] = caution
+                    results.append(job)
+
+                return jsonify({
+                    "course_id":   course_id,
+                    "course_name": course_name,
+                    "source":      "connections_table",
+                    "results":     results,
+                })
+        except Exception as e:
+            print(f"[connections] table lookup failed ({e}) — falling back to live search", flush=True)
+
+    # --- Live search fallback ---
     # Lift the overview chunk vector — matches against job duties (overview chunks)
     stored = courses_col.get(
         ids=[f"{course_id}_overview"],

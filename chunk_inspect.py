@@ -3,7 +3,7 @@ import sqlite3
 import json
 
 CHROMA_PATH = "chroma_store"
-JOBS_DB = "emiot_jobs_asset.db"
+JOBS_DB = "job_roles_asset.db"
 COURSES_DB = "emiot.sqlite"
 
 client = chromadb.PersistentClient(path=CHROMA_PATH)

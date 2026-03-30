@@ -1,6 +1,6 @@
 import sqlite3
 
-DB_PATH = r"C:\Dev\emiot-pathway-explorer\emiot_jobs_asset.db"
+DB_PATH = r"C:\Dev\emiot-pathway-explorer\job_roles_asset.db"
 
 def show_enrichment_summary():
     conn = sqlite3.connect(DB_PATH)

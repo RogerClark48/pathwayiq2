@@ -1,6 +1,6 @@
 """
 extract_job_fields.py
-Extracts structured fields from enriched_description blobs in emiot_jobs_asset.db.
+Extracts structured fields from enriched_description blobs in job_roles_asset.db.
 Adds five named columns to the jobs table: overview, typical_duties,
 skills_required, entry_routes, progression.
 
@@ -19,7 +19,7 @@ Inspection findings (recorded here for reference):
 # NOTE: TWO-FORMAT HANDLING IS TEMPORARY — EMIOT DATA ONLY
 # ============================================================
 # The dual-format complexity (Format A / Format B) exists solely
-# because emiot_jobs_asset.db was built across multiple enrichment
+# because job_roles_asset.db was built across multiple enrichment
 # passes with inconsistent output formatting.
 #
 # When the GMIoT jobs database is built, it will use a single
@@ -42,7 +42,7 @@ from pathlib import Path
 import anthropic
 
 BASE_DIR = Path(__file__).parent
-DB_PATH  = BASE_DIR / "emiot_jobs_asset.db"
+DB_PATH  = BASE_DIR / "job_roles_asset.db"
 
 MODEL      = "claude-sonnet-4-5"
 MAX_TOKENS = 1024
