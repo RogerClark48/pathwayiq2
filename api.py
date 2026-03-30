@@ -1855,6 +1855,12 @@ def job_detail(job_id):
     })
 
 
+@app.get("/jobs/<int:job_id>/progression")
+def job_progression(job_id):
+    # Stub — progression card being rebuilt
+    return jsonify({"has_progression": False})
+
+
 @app.post("/chat")
 def chat():
     cleanup_sessions()

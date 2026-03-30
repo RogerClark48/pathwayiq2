@@ -321,6 +321,18 @@ function buildDetailPanel(data, type) {
       a.textContent = `View full profile at ${data.source || 'source'} ↗`;
       panel.appendChild(a);
     }
+    if (false) { // progression card temporarily disabled — being rebuilt
+      const progLink = document.createElement('a');
+      progLink.className = 'progression-trigger';
+      progLink.href = '#';
+      progLink.textContent = '↑ Where could this role lead?';
+      progLink.addEventListener('click', e => {
+        e.preventDefault();
+        addTransitionLabel(`Progression from ${data.title}`);
+        loadProgressionCard(data.id);
+      });
+      panel.appendChild(progLink);
+    }
   }
   return panel;
 }
@@ -655,6 +667,87 @@ async function renderCareerCard(job) {
   } catch (err) {
     courseRows.innerHTML = `<p class="error-text">Could not load courses.</p>`;
     console.error(err);
+  }
+}
+
+// ─── Progression card ─────────────────────────────────────────────────────────
+function buildProgressionCard(data) {
+  const card = document.createElement('div');
+  card.className = 'card progression-card';
+
+  const typeLabel = document.createElement('p');
+  typeLabel.className = 'card-type';
+  typeLabel.textContent = 'CAREER PROGRESSION';
+
+  const heading = document.createElement('p');
+  heading.className = 'card-title';
+  heading.textContent = `Where ${data.job_title} can lead`;
+
+  const occMeta = document.createElement('p');
+  occMeta.className = 'progression-occ-meta';
+  occMeta.textContent = `Matched to: ${data.occ_name}` + (data.route_name ? ` · ${data.route_name}` : '');
+
+  card.append(typeLabel, heading, occMeta);
+
+  if (!data.progressions || data.progressions.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'loading-text';
+    empty.textContent = 'No progression data available for this occupation.';
+    card.appendChild(empty);
+    return card;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'progression-list';
+
+  data.progressions.forEach(prog => {
+    const row = document.createElement('div');
+    row.className = 'progression-row';
+
+    const nameWrap = document.createElement('div');
+    nameWrap.className = 'progression-row-top';
+
+    const name = document.createElement('span');
+    name.className = 'progression-name';
+    name.textContent = prog.name;
+
+    const levelBadge = document.createElement('span');
+    levelBadge.className = 'progression-level-badge';
+    levelBadge.textContent = `L${prog.level}`;
+
+    nameWrap.append(name, levelBadge);
+    row.appendChild(nameWrap);
+
+    if (prog.jobs && prog.jobs.length > 0) {
+      const jobsWrap = document.createElement('div');
+      jobsWrap.className = 'progression-jobs';
+      prog.jobs.forEach(j => {
+        const jobLink = document.createElement('span');
+        jobLink.className = 'progression-job-link';
+        jobLink.textContent = j.title;
+        jobLink.addEventListener('click', () => {
+          addTransitionLabel(`You tapped ${j.title}`);
+          renderCareerCard(j);
+        });
+        jobsWrap.appendChild(jobLink);
+      });
+      row.appendChild(jobsWrap);
+    }
+
+    list.appendChild(row);
+  });
+
+  card.appendChild(list);
+  return card;
+}
+
+async function loadProgressionCard(jobId) {
+  try {
+    const data = await apiFetch(`/jobs/${jobId}/progression`);
+    const card = buildProgressionCard(data);
+    addCard(card, `Progression from ${data.job_title}`);
+  } catch (err) {
+    console.error('Progression load failed:', err);
   }
 }
 

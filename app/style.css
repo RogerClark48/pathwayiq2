@@ -923,3 +923,79 @@ body {
   padding: 7px 10px;
   margin: 0;
 }
+
+/* ─── Progression trigger (in detail panel) ─────────────────────────────── */
+.progression-trigger {
+  display: block;
+  margin-top: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--teal);
+  text-decoration: none;
+}
+.progression-trigger:hover { text-decoration: underline; }
+
+/* ─── Progression card ───────────────────────────────────────────────────── */
+.progression-card { border-left: 3px solid var(--teal); }
+
+.progression-occ-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 0 12px;
+}
+
+.progression-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progression-row {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.progression-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.progression-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  flex: 1;
+}
+
+.progression-level-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--teal);
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.progression-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.progression-job-link {
+  font-size: 12px;
+  color: var(--teal);
+  cursor: pointer;
+  padding: 4px 8px;
+  background: #f0fdfa;
+  border-radius: 6px;
+  border: 1px solid #ccfbf1;
+}
+.progression-job-link:hover { background: #ccfbf1; }

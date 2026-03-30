@@ -108,9 +108,6 @@ vector = result.embeddings[0]
 | Field | Notes |
 |---|---|
 | `level` | RQF integer 1–7 — added in v2. 34 NULL (no content records). Assigned by Haiku from `entry_routes` + `qualifications_summary` + `progression`. |
-| `title_embedding` | BLOB — Voyage AI `voyage-3.5` float32 (1024 dims), title only. Used for SE stdCode tagging. All 1,252 rows populated. |
-| `se_std_code` | TEXT — matched SE occupation stdCode (e.g. `OCC0534`). Cosine similarity ≥ 0.85 threshold. 313/327 connected jobs tagged; 72 distinct stdCodes. |
-| `se_match_score` | REAL — cosine similarity score for the best SE occupation match, stored regardless of threshold. Diagnostic use. |
 
 **Everything else is empty or near-zero** (ESCO fields, work_environment, etc.).
 
@@ -198,10 +195,7 @@ Compound PK on `(std_code_from, std_code_to)` — no duplicates.
 **Pipeline scripts** (in `scripts/`):
 - `pull_se_data.py` — pulls routes, occupations, progressions
 - `assign_routes.py` — assigns route_id to occupations via Routes/{id}
-- `pull_se_typical_titles.py` — adds typical_job_titles via Occupations/{stdCode}?expand=...
-- `embed_se_occupations.py` — embeds name + typical_job_titles into se_occupations.embedding
-- `embed_job_titles.py` — embeds job titles into jobs.title_embedding
-- `tag_stdcodes.py` — cosine similarity tagging; writes se_std_code + se_match_score to jobs table
+- *(archived)* `pull_se_typical_titles.py`, `embed_se_occupations.py`, `embed_job_titles.py`, `tag_stdcodes.py` — moved to `scripts/archive/`; stdCode tagging approach retired
 
 ### `connections.db` — pre-computed course→job connections (v2)
 
@@ -266,7 +260,8 @@ Full spec: `PathwayIQ_Interface_Design_Spec_v2.docx`
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Qualification pathway map — modal overlay from qual grid trigger link | Complete |
-| 1 | Skills England data layer — pull routes, occupations, progressions, typical job titles, embeddings, stdCode tagging | Complete |
+| 1 | Skills England data layer — pull routes, occupations, progressions into `se_data.db` | Complete |
+| 1c | Progression card — stdCode tagging approach retired; Sonnet-based replacement pending | In progress |
 | 1b | Pre-computed connections table — course→job pairs with Haiku gatekeeping, served from connections.db | Complete |
 | 2 | Improved card relevance — filter by occupation level and route | Not started |
 | 3 | Progression advisory mode — Sonnet generates pathway narrative using SE data | Not started |
