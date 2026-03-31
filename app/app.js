@@ -321,18 +321,6 @@ function buildDetailPanel(data, type) {
       a.textContent = `View full profile at ${data.source || 'source'} ↗`;
       panel.appendChild(a);
     }
-    if (data.has_progression) {
-      const progLink = document.createElement('a');
-      progLink.className = 'progression-trigger';
-      progLink.href = '#';
-      progLink.textContent = '↑ Where could this role lead?';
-      progLink.addEventListener('click', e => {
-        e.preventDefault();
-        addTransitionLabel(`Progression from ${data.title}`);
-        loadProgressionCard(data.id, data.title);
-      });
-      panel.appendChild(progLink);
-    }
   }
   return panel;
 }
@@ -586,6 +574,14 @@ function buildCareerCard(job) {
   if (salPill) meta.appendChild(salPill);
   if (srcPill) meta.appendChild(srcPill);
 
+  const progBtn = document.createElement('button');
+  progBtn.className = 'progression-card-btn';
+  progBtn.textContent = '↑ Where could this role lead?';
+  progBtn.addEventListener('click', () => {
+    addTransitionLabel(`Progression from ${job.title}`);
+    loadProgressionCard(job.id, job.title);
+  });
+
   const connLabel = document.createElement('p');
   connLabel.className = 'connections-label';
   connLabel.textContent = 'Courses that lead here';
@@ -601,7 +597,7 @@ function buildCareerCard(job) {
   actions.className = 'card-actions';
   actions.appendChild(makePinBtn(job.id, 'job', job.title, card));
 
-  card.append(typeLabel, title, meta, connLabel, courseRows, actions);
+  card.append(typeLabel, title, meta, progBtn, connLabel, courseRows, actions);
   attachDetailToggle(title, card, `/jobs/${job.id}`, 'career', 'career');
   return { card, courseRows };
 }

@@ -924,16 +924,24 @@ body {
   margin: 0;
 }
 
-/* ─── Progression trigger (in detail panel) ─────────────────────────────── */
-.progression-trigger {
+/* ─── Progression card button (on career card) ──────────────────────────── */
+.progression-card-btn {
   display: block;
-  margin-top: 14px;
-  font-size: 13px;
-  font-weight: 600;
+  width: 100%;
+  margin: 10px 0 4px;
+  padding: 9px 12px;
+  background: transparent;
+  border: 1.5px solid var(--teal);
+  border-radius: 8px;
   color: var(--teal);
-  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
 }
-.progression-trigger:hover { text-decoration: underline; }
+.progression-card-btn:hover {
+  background: #f0fdfa;
+}
 
 /* ─── Progression card ───────────────────────────────────────────────────── */
 .progression-card { border-left: 3px solid var(--teal); }

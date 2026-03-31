@@ -1871,7 +1871,7 @@ def job_progression(job_id):
     # Step 1 — Check cache
     cached = jobs_conn.execute(
         "SELECT narrative, inbound_json, outbound_json FROM job_progression_cache "
-        "WHERE job_id = ? AND prompt_version = 1", (job_id,)
+        "WHERE job_id = ? AND prompt_version = 2", (job_id,)
     ).fetchone()
     if cached:
         jobs_conn.close()
@@ -1950,7 +1950,10 @@ def job_progression(job_id):
         f"2. Identify up to 4 candidates this role might naturally progress TO — roles at a "
         f"higher seniority or broader responsibility level\n"
         f"3. Write 2–3 sentences of warm, plain-English guidance explaining the progression "
-        f"landscape for this role, suitable for a college student considering their future career\n\n"
+        f"landscape for this role, suitable for a college student considering their future career. "
+        f"Where relevant, briefly mention the types of qualifications or training that support "
+        f"progression — for example apprenticeships, HNCs, HNDs, degrees, or professional "
+        f"accreditations. Keep it practical and specific to this role where possible.\n\n"
         f"Only select candidates from the list provided. If no candidates fit naturally as "
         f"inbound or outbound, return an empty array for that direction — do not force connections.\n\n"
         f'Respond with this JSON structure only:\n'
@@ -1994,7 +1997,7 @@ def job_progression(job_id):
         jobs_conn.execute(
             "INSERT OR REPLACE INTO job_progression_cache "
             "(job_id, narrative, inbound_json, outbound_json, prompt_version, created_at) "
-            "VALUES (?, ?, ?, ?, 1, ?)",
+            "VALUES (?, ?, ?, ?, 2, ?)",
             (job_id,
              result["narrative"],
              json.dumps(result.get("inbound", [])),
