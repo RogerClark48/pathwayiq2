@@ -938,64 +938,77 @@ body {
 /* ─── Progression card ───────────────────────────────────────────────────── */
 .progression-card { border-left: 3px solid var(--teal); }
 
-.progression-occ-meta {
-  font-size: 12px;
-  color: var(--muted);
-  margin: 2px 0 12px;
+.progression-narrative {
+  font-size: 14px;
+  font-style: italic;
+  color: var(--teal);
+  line-height: 1.6;
+  margin: 0 0 16px;
 }
 
-.progression-list {
+.progression-ladder {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 
-.progression-row {
+.progression-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progression-arrow {
+  text-align: center;
+  font-size: 18px;
+  color: var(--teal);
+  padding: 6px 0;
+  opacity: 0.6;
+}
+
+.progression-current {
+  border-left: 3px solid var(--teal);
+  padding: 10px 12px;
+  background: #f0fdfa;
+  border-radius: 0 8px 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0;
+}
+
+.progression-current-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+.progression-current-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.progression-role-row {
   background: #f8fafc;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
+  cursor: pointer;
+}
+.progression-role-row:hover {
+  background: #f0fdfa;
+  border-color: #99f6e4;
 }
 
-.progression-row-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.progression-name {
+.progression-role-title {
   font-size: 13px;
   font-weight: 600;
   color: #1f2937;
-  flex: 1;
 }
 
-.progression-level-badge {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--teal);
-  background: #f0fdfa;
-  border: 1px solid #99f6e4;
-  border-radius: 4px;
-  padding: 1px 6px;
-  white-space: nowrap;
-}
-
-.progression-jobs {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.progression-job-link {
+.progression-empty {
   font-size: 12px;
-  color: var(--teal);
-  cursor: pointer;
-  padding: 4px 8px;
-  background: #f0fdfa;
-  border-radius: 6px;
-  border: 1px solid #ccfbf1;
+  color: var(--muted);
+  font-style: italic;
+  padding: 2px 0;
 }
-.progression-job-link:hover { background: #ccfbf1; }

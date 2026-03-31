@@ -33,6 +33,13 @@ ANTHROPIC_URL      = "https://api.anthropic.com/v1/messages"
 HAIKU_MODEL        = "claude-haiku-4-5-20251001"
 SONNET_MODEL       = "claude-sonnet-4-6"
 
+PROGRESSION_SYSTEM_PROMPT = (
+    "You are a career guidance advisor helping college students understand career pathways. "
+    "You give warm, honest, plain-English advice grounded in how careers actually develop. "
+    "You must respond with valid JSON only. "
+    "Do not use markdown code blocks, backticks, or any text outside the JSON object itself."
+)
+
 # Maps subject tile labels to exact ssa_label values in gmiot_courses
 SSA_MAP = {
     'Engineering':   'Engineering and Manufacturing Technologies',
@@ -1852,13 +1859,163 @@ def job_detail(job_id):
         "entry_routes":        db.get("entry_routes") or "",
         "salary":              db.get("salary") or "",
         "career_progression":  db.get("progression") or "",
+        "has_progression":     bool(db.get("overview")),
     })
 
 
 @app.get("/jobs/<int:job_id>/progression")
 def job_progression(job_id):
-    # Stub — progression card being rebuilt
-    return jsonify({"has_progression": False})
+    jobs_conn = sqlite3.connect(JOBS_DB)
+    jobs_conn.row_factory = sqlite3.Row
+
+    # Step 1 — Check cache
+    cached = jobs_conn.execute(
+        "SELECT narrative, inbound_json, outbound_json FROM job_progression_cache "
+        "WHERE job_id = ? AND prompt_version = 1", (job_id,)
+    ).fetchone()
+    if cached:
+        jobs_conn.close()
+        print(f"[progression] job_id={job_id} cache hit", flush=True)
+        return jsonify({
+            "has_progression": True,
+            "cached":          True,
+            "narrative":       cached["narrative"],
+            "inbound":         json.loads(cached["inbound_json"]),
+            "outbound":        json.loads(cached["outbound_json"]),
+        })
+
+    # Step 2 — Get current job profile
+    job = jobs_conn.execute(
+        "SELECT id, title, overview, typical_duties, skills_required, entry_routes, progression "
+        "FROM jobs WHERE id = ?", (str(job_id),)
+    ).fetchone()
+    if not job or not job["overview"]:
+        jobs_conn.close()
+        return jsonify({"has_progression": False})
+    job = dict(job)
+
+    # Step 3 — Candidate jobs via Chroma cross-collection search
+    stored_vec = get_stored_vector(jobs_col, f"{job_id}_overview")
+    if stored_vec is None:
+        jobs_conn.close()
+        return jsonify({"has_progression": False})
+
+    hits = jobs_col.query(
+        query_embeddings=[stored_vec],
+        n_results=35,
+        where={"chunk": {"$eq": "overview"}},
+        include=["metadatas"],
+    )
+
+    candidate_ids = []
+    for meta in hits["metadatas"][0]:
+        jid = int(meta["job_id"])
+        if jid != job_id and jid not in candidate_ids:
+            candidate_ids.append(jid)
+        if len(candidate_ids) >= 30:
+            break
+
+    candidates = []
+    for cid in candidate_ids:
+        row = jobs_conn.execute(
+            "SELECT id, title, overview, typical_duties FROM jobs WHERE id = ?", (str(cid),)
+        ).fetchone()
+        if row:
+            candidates.append({
+                "id":             row["id"],
+                "title":          row["title"],
+                "overview":       (row["overview"] or "")[:150],
+                "typical_duties": (row["typical_duties"] or "")[:150],
+            })
+
+    # Step 4 — Build Sonnet prompt
+    candidate_block = "\n\n---\n\n".join(
+        f"ID: {c['id']}\nTitle: {c['title']}\n"
+        f"Overview: {c['overview']}\nTypical duties: {c['typical_duties']}"
+        for c in candidates
+    )
+    user_prompt = (
+        f"Here is a job profile:\n\n"
+        f"Title: {job['title']}\n"
+        f"Overview: {job['overview']}\n"
+        f"Typical duties: {job['typical_duties']}\n"
+        f"Skills required: {job['skills_required']}\n"
+        f"Entry routes: {job['entry_routes']}\n"
+        f"Career progression: {job['progression']}\n\n"
+        f"Here are {len(candidates)} candidate job profiles from our database:\n\n"
+        f"{candidate_block}\n\n"
+        f"Your task:\n"
+        f"1. Identify up to 4 candidates that someone might typically come FROM before reaching "
+        f"this role — roles that naturally lead here, usually at a lower seniority level\n"
+        f"2. Identify up to 4 candidates this role might naturally progress TO — roles at a "
+        f"higher seniority or broader responsibility level\n"
+        f"3. Write 2–3 sentences of warm, plain-English guidance explaining the progression "
+        f"landscape for this role, suitable for a college student considering their future career\n\n"
+        f"Only select candidates from the list provided. If no candidates fit naturally as "
+        f"inbound or outbound, return an empty array for that direction — do not force connections.\n\n"
+        f'Respond with this JSON structure only:\n'
+        f'{{"narrative": "...", "inbound": [{{"id": 42, "title": "..."}}], "outbound": [{{"id": 17, "title": "..."}}]}}'
+    )
+
+    print(f"[progression] job_id={job_id} title={job['title']!r} candidates={len(candidates)}", flush=True)
+
+    # Step 5 — Call Sonnet
+    try:
+        resp = httpx.post(
+            ANTHROPIC_URL,
+            headers={
+                "x-api-key":         ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type":      "application/json",
+            },
+            json={
+                "model":      SONNET_MODEL,
+                "max_tokens": 1000,
+                "system":     PROGRESSION_SYSTEM_PROMPT,
+                "messages":   [{"role": "user", "content": user_prompt}],
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        result_text = resp.json()["content"][0]["text"].strip()
+        # Strip markdown code fences if present
+        if result_text.startswith("```"):
+            result_text = result_text[result_text.find("\n")+1:]
+            if result_text.endswith("```"):
+                result_text = result_text[:-3].rstrip()
+        result = json.loads(result_text)
+    except Exception as e:
+        print(f"[progression] Sonnet call failed ({e})", flush=True)
+        jobs_conn.close()
+        return jsonify({"has_progression": False})
+
+    # Step 6 — Write to cache
+    try:
+        jobs_conn.execute(
+            "INSERT OR REPLACE INTO job_progression_cache "
+            "(job_id, narrative, inbound_json, outbound_json, prompt_version, created_at) "
+            "VALUES (?, ?, ?, ?, 1, ?)",
+            (job_id,
+             result["narrative"],
+             json.dumps(result.get("inbound", [])),
+             json.dumps(result.get("outbound", [])),
+             time.strftime("%Y-%m-%dT%H:%M:%S"))
+        )
+        jobs_conn.commit()
+    except Exception as e:
+        print(f"[progression] cache write failed ({e})", flush=True)
+    jobs_conn.close()
+
+    print(f"[progression] inbound={len(result.get('inbound',[]))} outbound={len(result.get('outbound',[]))}", flush=True)
+
+    # Step 7 — Return
+    return jsonify({
+        "has_progression": True,
+        "cached":          False,
+        "narrative":       result["narrative"],
+        "inbound":         result.get("inbound", []),
+        "outbound":        result.get("outbound", []),
+    })
 
 
 @app.post("/chat")

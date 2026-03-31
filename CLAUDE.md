@@ -197,6 +197,21 @@ Compound PK on `(std_code_from, std_code_to)` — no duplicates.
 - `assign_routes.py` — assigns route_id to occupations via Routes/{id}
 - *(archived)* `pull_se_typical_titles.py`, `embed_se_occupations.py`, `embed_job_titles.py`, `tag_stdcodes.py` — moved to `scripts/archive/`; stdCode tagging approach retired
 
+### `job_progression_cache` (`job_roles_asset.db`)
+
+Demand-driven cache of Sonnet-generated progression results. One row per job. Populated on first user request per job — cache builds naturally through usage.
+
+| Column | Type | Notes |
+|---|---|---|
+| `job_id` | INTEGER PK | FK to `jobs.id` |
+| `narrative` | TEXT | 2–3 sentence plain-English guidance from Sonnet |
+| `inbound_json` | TEXT | JSON array of `{"id": N, "title": "..."}` — roles that lead to this one |
+| `outbound_json` | TEXT | JSON array of `{"id": N, "title": "..."}` — roles this leads to |
+| `prompt_version` | INTEGER | 1 — increment when prompt changes to invalidate cache |
+| `created_at` | TEXT | ISO timestamp |
+
+Served by `GET /jobs/<id>/progression` in api.py. Candidates sourced from Chroma cross-collection search (top 30 nearest jobs). `prompt_version = 1` filter means old cache rows survive prompt changes without deletion — they just don't match the filter.
+
 ### `connections.db` — pre-computed course→job connections (v2)
 
 | Column | Type | Notes |
@@ -261,8 +276,8 @@ Full spec: `PathwayIQ_Interface_Design_Spec_v2.docx`
 |---|---|---|
 | 0 | Qualification pathway map — modal overlay from qual grid trigger link | Complete |
 | 1 | Skills England data layer — pull routes, occupations, progressions into `se_data.db` | Complete |
-| 1c | Progression card — stdCode tagging approach retired; Sonnet-based replacement pending | In progress |
 | 1b | Pre-computed connections table — course→job pairs with Haiku gatekeeping, served from connections.db | Complete |
+| 1c | Progression card — demand-driven Sonnet generation, permanent cache in `job_progression_cache` | Complete |
 | 2 | Improved card relevance — filter by occupation level and route | Not started |
 | 3 | Progression advisory mode — Sonnet generates pathway narrative using SE data | Not started |
 | 4 | Desktop/tablet progression map — visual network on wider screens | Not started |
