@@ -13,6 +13,7 @@ from threading import Lock
 import chromadb
 
 load_dotenv()
+print(f"[startup] VOYAGE_API_KEY present: {bool(os.environ.get('VOYAGE_API_KEY'))}", flush=True)
 
 # ---------------------------------------------------------------------------
 # Config
