@@ -2,6 +2,7 @@ import json
 import os
 import sqlite3
 import time
+from datetime import datetime
 import httpx
 import numpy as np
 import voyageai
@@ -16,11 +17,13 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-CHROMA_PATH        = r"C:\Dev\pathwayiq2\chroma_store"
-COURSES_DB         = r"C:\Dev\pathwayiq\emiot.sqlite"   # v1 only — dead in v2, do not use
-GMIOT_DB           = r"C:\Dev\pathwayiq2\gmiot.sqlite"
-JOBS_DB            = r"C:\Dev\pathwayiq2\job_roles_asset.db"
-CONNECTIONS_DB     = r"C:\Dev\pathwayiq2\connections.db"
+_BASE              = os.path.dirname(os.path.abspath(__file__))
+CHROMA_PATH        = os.path.join(_BASE, "chroma_store")
+COURSES_DB         = os.path.join(_BASE, "emiot.sqlite")   # v1 only — dead in v2, do not use
+GMIOT_DB           = os.path.join(_BASE, "gmiot.sqlite")
+JOBS_DB            = os.path.join(_BASE, "job_roles_asset.db")
+CONNECTIONS_DB     = os.path.join(_BASE, "connections.db")
+ANALYTICS_DB       = os.path.join(_BASE, "analytics.db")
 VOYAGE_MODEL       = "voyage-3.5"
 VOYAGE_DIMS        = 1024
 MIN_SCORE                = 50   # recalibrated for Voyage AI voyage-3.5 (was 65 for nomic-embed-text)
@@ -1006,7 +1009,10 @@ _SELECT_RESULTS_SYSTEM = (
     "Provide a brief acknowledgement (one sentence) describing what was found — "
     "say what you are showing the user, not what you searched for. "
     "Example: 'Found 5 health care courses across Wigan and Tameside.' "
-    "or 'Showing 8 construction management courses from GM IoT partners.'"
+    "or 'Showing 8 construction management courses from GM IoT partners.' "
+    "When the selected results include career roles, end your acknowledgement with the sentence: "
+    "'Tap any role to see where it could lead.' "
+    "Do not include this sentence when results are courses only."
 )
 
 
@@ -2177,6 +2183,53 @@ def chat():
         print(f"[chat] advisory attached: {advisory['type']} id={advisory['id']}", flush=True)
 
     return jsonify(response)
+
+
+# ---------------------------------------------------------------------------
+# Analytics
+# ---------------------------------------------------------------------------
+def _init_analytics_db():
+    """Create analytics.db and events table if they don't exist (first-run on fresh deploy)."""
+    try:
+        conn = sqlite3.connect(ANALYTICS_DB)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS events ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "session_id TEXT NOT NULL, ts TEXT NOT NULL, event TEXT NOT NULL, "
+            "entity_type TEXT, entity_id INTEGER, entity_title TEXT, meta TEXT)"
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+_init_analytics_db()
+
+
+@app.post("/analytics")
+def log_analytics():
+    try:
+        body        = request.get_json(force=True, silent=True) or {}
+        session_id  = str(body.get("session_id") or "")
+        event       = str(body.get("event") or "")
+        entity_type = body.get("entity_type") or None
+        entity_id   = body.get("entity_id") or None
+        entity_title = body.get("entity_title") or None
+        meta        = body.get("meta") or None
+        if not session_id or not event:
+            return ("", 204)
+        ts = datetime.utcnow().isoformat()
+        conn = sqlite3.connect(ANALYTICS_DB)
+        conn.execute(
+            "INSERT INTO events (session_id, ts, event, entity_type, entity_id, entity_title, meta) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (session_id, ts, event, entity_type, entity_id, entity_title, meta),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    return ("", 204)
 
 
 # ---------------------------------------------------------------------------
