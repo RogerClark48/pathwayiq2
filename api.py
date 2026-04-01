@@ -71,7 +71,7 @@ QUAL_FILTER_MAP = {
 app = Flask(__name__)
 CORS(app)
 
-vo = voyageai.Client()
+vo = voyageai.Client(api_key=os.environ.get("VOYAGE_API_KEY"))
 
 chroma = chromadb.PersistentClient(path=CHROMA_PATH)
 courses_col          = chroma.get_collection("gmiot_courses")
