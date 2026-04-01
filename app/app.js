@@ -29,6 +29,26 @@ function getOrCreateSessionId() {
 }
 const SESSION_ID = getOrCreateSessionId();
 
+// ─── Analytics ────────────────────────────────────────────────────────────────
+function logEvent(event, entityType, entityId, entityTitle, meta) {
+  try {
+    fetch('/analytics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id:   SESSION_ID,
+        event,
+        entity_type:  entityType  || null,
+        entity_id:    entityId    || null,
+        entity_title: entityTitle || null,
+        meta:         meta ? JSON.stringify(meta) : null,
+      }),
+    });
+  } catch (_) {}
+}
+
+logEvent('session_start');
+
 // ─── State ────────────────────────────────────────────────────────────────────
 let selectedSubject      = null;
 let selectedQualFilter   = null;
@@ -293,7 +313,7 @@ function buildDetailPanel(data, type) {
       a.href = data.course_url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      a.textContent = `View course page at ${data.provider || 'provider'} ↗`;
+      a.textContent = `View course page at ${data.provider || 'provider'} ↗ (opens in new tab)`;
       panel.appendChild(a);
     }
   } else {
@@ -318,14 +338,14 @@ function buildDetailPanel(data, type) {
       a.href = data.source_url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      a.textContent = `View full profile at ${data.source || 'source'} ↗`;
+      a.textContent = `View full profile at ${data.source || 'source'} ↗ (opens in new tab)`;
       panel.appendChild(a);
     }
   }
   return panel;
 }
 
-function attachDetailToggle(titleEl, cardEl, apiPath, type, iconType, detailsToggleEl) {
+function attachDetailToggle(titleEl, cardEl, apiPath, type, iconType, onOpen) {
   // Prepend icon then wrap text — chevron stays right-aligned via space-between
   const text = titleEl.textContent;
   titleEl.textContent = '';
@@ -353,6 +373,7 @@ function attachDetailToggle(titleEl, cardEl, apiPath, type, iconType, detailsTog
     }
     open = true;
     chevron.textContent = 'Details ▴';
+    if (onOpen) onOpen();
     panel = document.createElement('div');
     panel.className = 'detail-panel';
     const loading = document.createElement('p');
@@ -417,6 +438,14 @@ function iconSvg(type) {
       <rect x="11" y="6.5" width="2" height="5" rx="1" fill="#1A1A2E"/>
       <path d="M5 8v3c0 1.1 1.3 2 3 2s3-.9 3-2V8" stroke="#1A1A2E" stroke-width="1.5" fill="none" stroke-linecap="round"/>
     </svg>`;
+  } else if (type === 'progression') {
+    wrap.innerHTML = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="2" y="13" width="4" height="4" rx="0.5" fill="#0d9488"/>
+      <rect x="8" y="9" width="4" height="8" rx="0.5" fill="#0d9488"/>
+      <rect x="14" y="5" width="4" height="12" rx="0.5" fill="#0d9488"/>
+      <path d="M11 2l2.5 2.5L11 7" stroke="#0d9488" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <line x1="4" y1="4.5" x2="13" y2="4.5" stroke="#0d9488" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>`;
   } else {
     wrap.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <rect x="2" y="5" width="12" height="9" rx="2" fill="#007B83" stroke="#007B83" stroke-width="1.5"/>
@@ -469,7 +498,7 @@ function buildCourseCard(course, rank) {
   actions.appendChild(makePinBtn(course.id, 'course', course.title, card));
 
   card.append(typeLabel, title, meta, connLabel, careerRows, actions);
-  attachDetailToggle(title, card, `/courses/${course.id}`, 'course', 'course');
+  attachDetailToggle(title, card, `/courses/${course.id}`, 'course', 'course', () => logEvent('course_detail_open', 'course', course.id, course.title));
   return { card, careerRows };
 }
 
@@ -483,6 +512,7 @@ function populateCareerRows(careerRows, jobs) {
     return;
   }
   jobs.slice(0, 5).forEach(job => {
+    logEvent('career_impression', 'job', job.id, job.title);
     const row = document.createElement('div');
     row.className = 'career-row';
 
@@ -541,6 +571,7 @@ function populateCareerRows(careerRows, jobs) {
 async function renderCourseCard(course, rank) {
   const { card, careerRows } = buildCourseCard(course, rank);
   addCard(card, course.title);
+  logEvent('course_impression', 'course', course.id, course.title);
   browsingHistory.push({ type: 'course', title: course.title, id: String(course.id) });
 
   // Load careers asynchronously
@@ -571,16 +602,27 @@ function buildCareerCard(job) {
   meta.className = 'card-meta';
   const salPill = pill(job.salary || null, 'pill-teal');
   const srcPill = pill(job.source || null, 'pill-grey');
-  if (salPill) meta.appendChild(salPill);
   if (srcPill) meta.appendChild(srcPill);
+  if (salPill) meta.appendChild(salPill);
 
   const progBtn = document.createElement('button');
-  progBtn.className = 'progression-card-btn';
-  progBtn.textContent = '↑ Where could this role lead?';
+  progBtn.className = 'pill pill-outline-teal';
+  progBtn.textContent = 'Where could this role lead?';
   progBtn.addEventListener('click', () => {
+    logEvent('progression_open', 'job', job.id, job.title);
     addTransitionLabel(`Progression from ${job.title}`);
     loadProgressionCard(job.id, job.title);
   });
+  meta.appendChild(progBtn);
+
+  const adzunaBtn = document.createElement('a');
+  adzunaBtn.className = 'adzuna-link';
+  adzunaBtn.href = `https://www.adzuna.co.uk/jobs/search?q=${encodeURIComponent('"' + job.title + '"')}&loc=67883`;
+  adzunaBtn.target = '_blank';
+  adzunaBtn.rel = 'noopener noreferrer';
+  adzunaBtn.textContent = 'Find vacancies → (opens in new tab)';
+  adzunaBtn.addEventListener('click', () => logEvent('adzuna_click', 'job', job.id, job.title));
+  meta.appendChild(adzunaBtn);
 
   const connLabel = document.createElement('p');
   connLabel.className = 'connections-label';
@@ -597,8 +639,8 @@ function buildCareerCard(job) {
   actions.className = 'card-actions';
   actions.appendChild(makePinBtn(job.id, 'job', job.title, card));
 
-  card.append(typeLabel, title, meta, progBtn, connLabel, courseRows, actions);
-  attachDetailToggle(title, card, `/jobs/${job.id}`, 'career', 'career');
+  card.append(typeLabel, title, meta, connLabel, courseRows, actions);
+  attachDetailToggle(title, card, `/jobs/${job.id}`, 'career', 'career', () => logEvent('career_detail_open', 'job', job.id, job.title));
   return { card, courseRows };
 }
 
@@ -758,6 +800,12 @@ function buildProgressionCard(data, currentJobTitle) {
 
   ladder.append(outboundSection, arrowTop, currentRow, arrowBottom, inboundSection);
   card.appendChild(ladder);
+
+  const disclaimer = document.createElement('p');
+  disclaimer.className = 'ai-disclaimer';
+  disclaimer.textContent = 'Pathway suggestions are AI-generated and may not reflect every route into or out of this role.';
+  card.appendChild(disclaimer);
+
   return card;
 }
 
@@ -976,6 +1024,7 @@ async function loadCourses() {
 
   // Clear thread
   thread.innerHTML = '';
+  setLlmLine('');
 
   const label = selectedQualFilter
     ? `You selected ${selectedSubject} · ${QUALS.find(q => q.filter === selectedQualFilter)?.label}`
@@ -1017,6 +1066,7 @@ async function loadCourses() {
 
 function selectSubject(subject, tileEl) {
   const proceed = () => {
+    logEvent('tile_tap', null, null, null, { tile_type: 'subject', tile_label: subject });
     selectedSubject       = subject;
     selectedQualFilter    = null;
     chatHistory.length    = 0;
@@ -1049,6 +1099,7 @@ function toggleQual(filter, tileEl) {
   if (!selectedSubject) return;
 
   const proceed = () => {
+    logEvent('tile_tap', null, null, null, { tile_type: 'qual', tile_label: filter });
     if (selectedQualFilter === filter) {
       selectedQualFilter = null;
       tileEl.classList.remove('active');
@@ -1076,6 +1127,7 @@ async function handleChatSubmit() {
   const message = chatInput.value.trim();
   if (!message) return;
   chatInput.value = '';
+  logEvent('chat_submit', null, null, null, { query: message });
 
   chatHistory.push({ role: 'user', content: message });
   addChatBubble(message);
@@ -1103,6 +1155,7 @@ async function handleChatSubmit() {
     }
 
     if (data.results && data.results.length > 0) {
+      data.results.forEach(r => logEvent('chat_impression', r.type === 'job' ? 'job' : 'course', r.id, r.title));
       addTransitionLabel(`From your query: "${message}"`);
       const courseResults = data.results.filter(r => r.type !== 'job');
       const jobResults    = data.results.filter(r => r.type === 'job');
@@ -1177,6 +1230,7 @@ document.querySelector('.session-btn').addEventListener('click', () => {
     'View saved items',
     () => {
       thread.innerHTML = '';
+      setLlmLine('');
       chatHistory.length     = 0;
       browsingHistory.length = 0;
       const card = buildSavedCard();

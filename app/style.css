@@ -353,6 +353,7 @@ body {
 .card-meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   margin-bottom: 14px;
 }
@@ -365,9 +366,11 @@ body {
   border-radius: 20px;
   white-space: nowrap;
 }
-.pill-amber { background: var(--amber);  color: #111827; }
-.pill-grey  { background: #E5E7EB;       color: #374151; }
-.pill-teal  { background: var(--teal);   color: white; }
+.pill-amber        { background: var(--amber); color: #111827; }
+.pill-grey         { background: #E5E7EB;      color: #374151; }
+.pill-teal         { background: var(--teal);  color: white; }
+.pill-outline-teal { background: transparent; color: var(--teal); border: 1.5px solid var(--teal); cursor: pointer; }
+.pill-outline-teal:hover { background: #f0fdfa; }
 
 /* ─── Type icons ─────────────────────────────────────────────────────────── */
 .type-icon {
@@ -924,24 +927,16 @@ body {
   margin: 0;
 }
 
-/* ─── Progression card button (on career card) ──────────────────────────── */
-.progression-card-btn {
-  display: block;
-  width: 100%;
-  margin: 10px 0 4px;
-  padding: 9px 12px;
-  background: transparent;
-  border: 1.5px solid var(--teal);
-  border-radius: 8px;
+/* ─── Adzuna vacancy link (on career card) ───────────────────────────────── */
+.adzuna-link {
+  margin-left: auto;
   color: var(--teal);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
-  text-align: center;
-  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
 }
-.progression-card-btn:hover {
-  background: #f0fdfa;
-}
+.adzuna-link:hover { text-decoration: underline; }
 
 /* ─── Progression card ───────────────────────────────────────────────────── */
 .progression-card { border-left: 3px solid var(--teal); }
@@ -1019,4 +1014,10 @@ body {
   color: var(--muted);
   font-style: italic;
   padding: 2px 0;
+}
+.ai-disclaimer {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
 }
