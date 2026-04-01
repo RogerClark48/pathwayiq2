@@ -14,6 +14,7 @@ import chromadb
 
 load_dotenv()
 print(f"[startup] VOYAGE_API_KEY present: {bool(os.environ.get('VOYAGE_API_KEY'))}", flush=True)
+print(f"[startup] All env vars: {[k for k in os.environ.keys()]}", flush=True)
 
 # ---------------------------------------------------------------------------
 # Config
