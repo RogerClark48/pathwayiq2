@@ -28,9 +28,11 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-CHROMA_PATH = r"C:\Dev\pathwayiq\chroma_store"
-GMIOT_DB    = r"C:\Dev\pathwayiq\gmiot.sqlite"
-JOBS_DB     = r"C:\Dev\pathwayiq\job_roles_asset.db"
+import os
+_BASE       = os.path.dirname(os.path.abspath(__file__))
+CHROMA_PATH = os.path.join(_BASE, "chroma_store")
+GMIOT_DB    = os.path.join(_BASE, "gmiot.sqlite")
+JOBS_DB     = os.path.join(_BASE, "job_roles_asset.db")
 VOYAGE_MODEL = "voyage-3.5"
 VOYAGE_DIMS  = 1024
 BATCH_SIZE   = 64
