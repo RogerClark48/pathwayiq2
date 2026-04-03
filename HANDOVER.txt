@@ -1,0 +1,329 @@
+PathwayIQ v2 — Developer Handover
+===================================
+Last updated: 2026-04-03
+Client: Scott Clark Consultants
+Deployment: GMIoT (Greater Manchester IoT) Course and Career Explorer
+
+
+WHAT THE APP DOES
+-----------------
+PathwayIQ helps prospective students explore career pathways from GMIoT courses,
+and discover courses starting from a career interest. It surfaces 83 GMIoT courses
+alongside 1,252 NCS/Prospects job role records, connected by pre-computed semantic
+similarity scores.
+
+The live deployment is a single-page web app served by a Python/Flask backend.
+There is no user authentication — all sessions are anonymous and in-memory.
+
+
+HOW TO RUN IT
+-------------
+1. Ensure the .env file exists in the project root with:
+     ANTHROPIC_API_KEY=...
+     VOYAGE_API_KEY=...
+     SKILLS_ENGLAND_API_KEY=...   (pipeline only — not needed for the server)
+
+2. Start the server:
+     C:\Dev\pathwayiq2\venv\Scripts\python.exe api.py
+
+3. Open http://localhost:5000 in a browser.
+   Always open via the server — not directly from the filesystem — to avoid CORS issues.
+
+The frontend is app/index.html, app/style.css, app/app.js — served statically by Flask.
+
+
+KEY FILES
+---------
+api.py                  Flask backend — all API endpoints, LLM calls, Chroma queries
+app/index.html          Single-page frontend
+app/style.css           Mobile-first styles
+app/app.js              All frontend JS — card rendering, chat, navigation
+
+gmiot.sqlite            83 GMIoT courses (table: gmiot_courses, PK: course_id)
+job_roles_asset.db      1,252 NCS/Prospects job roles (table: jobs, PK: id)
+                          also contains: job_progression_cache table (see below)
+connections.db          Pre-computed course→job connections (850 pairs)
+se_data.db              Skills England apprenticeship standards and progressions
+chroma_store/           Chroma vector store — four collections (see below)
+.env                    API keys — not committed to git
+
+
+DATABASES IN DETAIL
+-------------------
+
+gmiot.sqlite — table: gmiot_courses
+  course_id, course_title, provider, qual_type, level, ssa_code, ssa_label,
+  overview, what_you_will_learn, entry_requirements, progression, course_url, mode
+  - 83 courses across 6 partner providers
+  - level: RQF integer 1–7 (4 nulls are Short Courses — correct)
+  - ssa_label: used for subject tile navigation (exact match)
+  - qual_type: used for qualification tile navigation
+
+job_roles_asset.db — table: jobs
+  id, title, source (NCS|Prospects), url, level,
+  overview, typical_duties, skills_required, entry_routes, salary, progression,
+  salary_min, salary_max, qualifications_summary, typical_hours
+  - 1,252 rows; 1,216 have named content fields; 36 have NULL content — handle gracefully
+  - Same job title can appear from both NCS and Prospects — this is intentional
+  - salary_min/salary_max: integers; 0 is used as a null sentinel
+  - level: RQF integer 1–7, assigned by Haiku from entry_routes + qualifications_summary
+
+job_roles_asset.db — table: job_progression_cache
+  job_id (PK), narrative, inbound_json, outbound_json, prompt_version, created_at
+  - Demand-driven cache: populated on first user request per job, then served from cache
+  - narrative: 2–3 sentence plain-English career progression guidance (Sonnet-generated)
+  - inbound_json / outbound_json: JSON arrays of {id, title} for related roles
+  - prompt_version=1: old rows without this version are ignored (allows prompt changes
+    without deleting the table)
+
+connections.db — table: connections
+  course_id, job_id, semantic_score (int), skills_score (int), created_at
+  - Compound PK on (course_id, job_id)
+  - semantic_score: domain similarity % from Chroma cross-collection search
+  - skills_score: what_you_will_learn vs skills_required cosine similarity %
+  - Built by scripts/build_connections.py — not updated at runtime
+
+se_data.db — tables: se_routes, se_occupations, se_progressions
+  - 951 approved apprenticeship standards with Voyage AI embeddings
+  - 2,644 directed progression pairs
+  - Used for future Phase 2/3 features — not yet surfaced in the UI
+
+
+CHROMA VECTOR STORE — four collections
+---------------------------------------
+gmiot_courses         — overview chunks: title + overview + what_you_will_learn
+                        chunk ID pattern: {course_id}_overview
+gmiot_jobs            — overview chunks: title + overview + typical_duties
+                        chunk ID pattern: {job_id}_overview
+gmiot_courses_learning — learning chunks: what_you_will_learn only
+                         chunk ID pattern: {course_id}_learning
+gmiot_jobs_skills     — skills chunks: skills_required only
+                        chunk ID pattern: {job_id}_skills_only
+
+Two chunks per record in their respective collections. Cross-collection search works
+by lifting a stored embedding vector from one collection and querying the other with it.
+
+IMPORTANT: Stale Chroma HNSW lock files cause 500 errors on startup. If you see
+"Nothing found on disk" errors, reboot Windows before debugging code.
+
+
+EXTERNAL SERVICES
+-----------------
+Voyage AI (voyage-3.5, 1024 dims)
+  - Used at runtime to embed the user's chat query before Chroma search
+  - input_type="query" at runtime; document chunks were embedded with input_type="document"
+  - Client: voyageai.Client() — reads VOYAGE_API_KEY from environment
+
+Anthropic API
+  - Claude Haiku (claude-haiku-4-5-20251001): chat and advisory
+  - Claude Sonnet (claude-sonnet-4-6): advisory cards and job progression narratives
+  - Client: direct httpx POST to https://api.anthropic.com/v1/messages
+  - Key: ANTHROPIC_API_KEY from environment
+
+
+API ENDPOINTS
+-------------
+GET  /                              Serves app/index.html
+GET  /app/<path>                    Serves static frontend assets
+
+GET  /search/courses                List courses — params: subject= or q= (keyword) and
+                                    optional qualification= to narrow results.
+                                    No "all courses" option — use q=a to get most of the
+                                    catalogue (SQLite LIKE '%a%' matches most titles).
+GET  /courses/<id>                  Single course detail
+GET  /courses/<id>/careers          Top career connections for a course (from connections.db,
+                                    falls back to live Chroma if no rows found)
+
+GET  /jobs/<id>                     Single job detail
+GET  /jobs/<id>/courses             Top course connections for a job (live Chroma search)
+GET  /jobs/<id>/progression         Career progression data — Sonnet-generated, cached
+
+POST /chat                          Main chat endpoint (see Chat Flow below)
+
+GET  /analytics/summary             Session and usage summary (in-memory)
+
+
+SUBJECT AND QUALIFICATION TILE NAVIGATION
+-----------------------------------------
+Subject tiles (Engineering, Digital & Tech, Construction, Health, Arts & Media)
+  - Map to ssa_label values in gmiot_courses via SSA_MAP in api.py
+  - GET /search/courses?subject=Engineering
+
+Qualification tiles (T Level, Apprenticeship, HNC, HND, etc.)
+  - Map to qual_type values via QUAL_FILTER_MAP in api.py
+  - GET /search/courses?qualification=HNC
+
+
+CHAT FLOW — HOW IT WORKS END TO END
+-------------------------------------
+The chat endpoint uses a two-turn tool-use pattern with Haiku.
+
+Turn 1 — specify_searches
+  Haiku receives: user message + session context (prior turns, browsing history,
+  active candidate set summary).
+  Haiku calls the specify_searches tool to declare what to search for:
+    - query_type: "intent" | "filter" | "refinement" | "clarification"
+    - searches: list of {query, type (courses|jobs|both), scope, filters}
+    - collection_action: "build" | "extend" | "refine" | "none"
+    - acknowledgement: one-sentence response for the bottom bar
+
+  Filters Haiku can specify: ssa_label, qual_type, mode, provider, level.
+  Scope can be "full_collection" or "candidate_set" (refines within prior results).
+
+Retrieval (backend)
+  For each specified search: embed the query via Voyage AI, query Chroma with
+  the appropriate where clause. Returns top-N candidates by embedding similarity.
+  Structural filters (qual_type, ssa_label, etc.) use n_results=200 to return all
+  matches; semantic-only searches use n_results=8.
+
+Turn 2 — select_results
+  Backend formats candidates as a plain-text summary and sends back to Haiku as
+  a tool_result (closing the tool_use loop from Turn 1).
+  Haiku calls select_results to pick the best matches and write a one-sentence
+  acknowledgement shown in the bottom bar.
+
+Response returned to frontend:
+  {results: [...], acknowledgement: "...", candidate_set: {...}, session_id: "..."}
+
+Sessions are stored in-memory (_sessions dict) with a 30-minute TTL. Each session
+tracks: qualifying_count, advisory_count, seen_ids, last_context, browsing history.
+
+
+ADVISORY CARDS
+--------------
+System-initiated — the user does not request these. After every qualifying
+interaction, the session counter is checked:
+  - Minimum 4 qualifying interactions before the first advisory card
+  - Minimum 5-interaction gap between subsequent advisory cards
+
+When triggered, Sonnet generates the advisory card content using recent session
+context (browsing history + prior turns). Advisory cards have a dashed amber border
+and appear in the central scroll zone.
+
+The advisory card decision is made via the submit_advisory_decision tool (Sonnet).
+If Sonnet judges no candidate is worth surfacing, it returns advisory_item_type="none"
+and no card is shown.
+
+
+JOB PROGRESSION CARDS
+----------------------
+GET /jobs/<id>/progression
+
+First call per job:
+  1. Fetch top 30 nearest jobs from Chroma (cross-collection — lifts job vector,
+     queries gmiot_jobs collection for nearest neighbours)
+  2. Sonnet generates: a 2–3 sentence narrative, an inbound list (roles that lead
+     to this one), an outbound list (roles this leads to)
+  3. Result written to job_progression_cache in job_roles_asset.db
+
+Subsequent calls:
+  Read directly from cache. Cache is permanent — never expires unless prompt_version
+  changes (currently 1). The filter WHERE prompt_version = 1 in the query means
+  old rows are simply never returned if the version is bumped.
+
+
+FRONTEND STRUCTURE (app/)
+--------------------------
+index.html
+  Three zones:
+  - Header (fixed): brand mark + session overview icon
+  - Central area (scrollable): all cards, detail views, advisory cards, chat bubbles
+  - Bottom bar (fixed): LLM acknowledgement line (italic teal) + text input
+
+Card types:
+  - Course card: title (tappable for detail), qual pill (amber), provider pill (grey),
+    top 3 career connections with match score + salary + source label
+  - Career card: title (tappable), salary (teal), source, top 3 course connections
+  - Advisory card: dashed amber border, system-initiated, no match score, amber CTA
+  - Progression card: inbound/outbound roles + Sonnet narrative
+
+Navigation model:
+  - Vertical scroll thread, newest at bottom, earlier cards faded
+  - Transition labels between cards
+  - All external links open in a new tab
+  - Detail views expand in-place (no separate page)
+
+app.js handles: tile navigation, card rendering, detail view toggling, chat submission,
+session_id management (generated client-side, sent with every POST /chat), career
+progression modal.
+
+
+QUAL LEVEL REFERENCE (RQF)
+---------------------------
+Level 1 — Entry level
+Level 2 — GCSE / Intermediate
+Level 3 — A Level / T Level / Advanced
+Level 4 — HNC
+Level 5 — HND / Foundation Degree
+Level 6 — Bachelor's degree
+Level 7 — Master's / Postgraduate / Chartered
+
+
+KNOWN ISSUES AND GOTCHAS
+-------------------------
+- Chroma lock files: stale HNSW locks on Windows cause 500 errors. Reboot Windows
+  if you see "Nothing found on disk" errors from Chroma — do not try to fix in code.
+
+- gatekeep_jobs / gatekeep_courses functions in api.py still reference an Ollama
+  endpoint (http://localhost:11434) that is no longer in use. These functions are
+  called by the pipeline scripts (scripts/build_connections.py), not by the live
+  server. They are not on any server request path. Do not remove without checking
+  build_connections.py.
+
+- course_row() and COURSES_DB (pointing to v1 emiot.sqlite) are dead code. Do not
+  call course_row() — all course queries use gmiot_course_row() and GMIOT_DB.
+  Leave these in place until the dead code is explicitly cleaned up.
+
+- The salary_min/salary_max fields use 0 as a null sentinel. salary_string() handles
+  this by treating 0 as absent. Do not assume 0 means zero salary.
+
+- 36 job records have NULL content fields (overview, typical_duties, etc.). These
+  are valid rows — handle gracefully, do not filter them out.
+
+
+DEPLOYING FOR A DIFFERENT COURSE DATASET
+-----------------------------------------
+Several prompts in api.py are specific to GMIoT and will need updating if the app
+is deployed with a different institution's course data.
+
+_SPECIFY_SEARCHES_SYSTEM (line ~855)
+  Lists the five GMIoT subject areas and six partner providers by name. Update both
+  lists to match the new dataset's subject taxonomy and providers.
+
+_EXPLAIN_SYSTEM (line ~759)
+  Contains GMIoT-specific content throughout:
+  - PARTNER PROVIDERS section: names and locations are GMIoT-specific — replace entirely
+  - SUBJECT AREAS COVERED: matches GMIoT's SSA classification — update to match new data
+  - QUALIFICATION TYPES: largely generic UK qualifications, but review for relevance
+  - The opening sentence names GMIoT explicitly — update the institution name
+
+SSA_MAP and QUAL_FILTER_MAP (lines ~49–68)
+  These are code constants, not prompts, but they drive the subject tile and
+  qualification tile navigation. If the new dataset uses a different subject
+  taxonomy or qualification set, both maps need updating alongside the frontend tiles.
+
+The job data (NCS/Prospects) and RQF level reference are generic and should not
+need changing unless the job dataset is also replaced.
+
+
+WHAT IS NOT YET BUILT (V2 ROADMAP)
+------------------------------------
+Phase 2 — Improved card relevance: filter connections by occupation level and SE route
+Phase 3 — Progression advisory mode: Sonnet generates full pathway narrative using SE data
+Phase 4 — Desktop/tablet progression map: visual network on wider screens
+
+
+DEPENDENCIES (all installed in venv)
+--------------------------------------
+flask, flask-cors     Web server
+chromadb              Vector store client
+voyageai              Embedding API client
+anthropic             Claude API client (used in pipeline scripts only — server uses httpx)
+numpy                 Cosine similarity
+python-dotenv         .env loading
+requests, httpx       HTTP — requests for pipeline scripts, httpx in api.py
+
+Recreate the venv if needed:
+  python -m venv venv
+  venv\Scripts\activate
+  pip install flask flask-cors chromadb voyageai anthropic requests httpx python-dotenv numpy

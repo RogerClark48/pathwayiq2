@@ -1154,7 +1154,10 @@ async function handleChatSubmit() {
       chatHistory.push({ role: 'assistant', content: data.acknowledgement });
     }
 
-    if (data.results && data.results.length > 0) {
+    if (data.response_text) {
+      addSystemBubble(data.response_text);
+      chatHistory.push({ role: 'assistant', content: data.response_text });
+    } else if (data.results && data.results.length > 0) {
       data.results.forEach(r => logEvent('chat_impression', r.type === 'job' ? 'job' : 'course', r.id, r.title));
       addTransitionLabel(`From your query: "${message}"`);
       const courseResults = data.results.filter(r => r.type !== 'job');

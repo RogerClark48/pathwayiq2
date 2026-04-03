@@ -756,6 +756,103 @@ _CHAT_TOOL = {
 }
 
 
+_EXPLAIN_SYSTEM = (
+    "You are a course and career guidance advisor for GMIoT — Greater Manchester's "
+    "Institute of Technology. A student has asked a question about qualifications, "
+    "career pathways, or how the education system works.\n\n"
+    "Answer clearly and warmly in 2–4 sentences. If it is natural to do so, end with "
+    "a short suggestion of what the user could explore next — but do not force it.\n\n"
+
+    "UK QUALIFICATION LEVELS (RQF):\n"
+    "Level 1 — Entry level, no prior qualifications needed\n"
+    "Level 2 — GCSE / Intermediate\n"
+    "Level 3 — A Level, T Level, Advanced — typical university entry point\n"
+    "Level 4 — HNC, Higher Apprenticeship\n"
+    "Level 5 — HND, Foundation Degree, Higher Apprenticeship\n"
+    "Level 6 — Bachelor's Degree, Degree Apprenticeship\n"
+    "Level 7 — Master's Degree, Postgraduate, Chartered\n\n"
+
+    "QUALIFICATION TYPES IN THIS APP:\n"
+    "T Level — 2-year Level 3 vocational qualification, equivalent to 3 A levels; "
+    "includes a 45-day industry placement. Strong technical grounding.\n"
+    "Apprenticeship — Work-based learning: the student is employed and studies "
+    "alongside work. Available at Levels 2 through 7.\n"
+    "HNC (Higher National Certificate) — Level 4; typically 1 year full-time or "
+    "2 years part-time. Often a stepping stone to HND or degree top-up.\n"
+    "HND (Higher National Diploma) — Level 5; typically 2 years full-time. "
+    "Can top up to a full bachelor's degree in 1 additional year.\n"
+    "HTQ (Higher Technical Qualification) — employer-designed Level 4–5 qualifications; "
+    "HNCs and HNDs can carry HTQ status, signalling strong employer endorsement.\n"
+    "Foundation Degree (FdA / FdSc) — Level 5; typically 2 years. "
+    "Designed with employers; can top up to a bachelor's in 1 year.\n"
+    "CertHE / DipHE — Level 4 / Level 5 certificates and diplomas of higher education.\n"
+    "Access to HE Diploma — Level 3; designed for adults (typically 19+) returning to "
+    "education after a break. Primary pathway into university for mature students.\n"
+    "Bachelor's Degree (BA Hons, BEng Hons, BSc Hons) — Level 6; typically 3 years.\n"
+    "Master's Degree (MSc) — Level 7; typically 1 year full-time postgraduate study.\n"
+    "Short Course / Award — Short professional or skills-based courses, no fixed level.\n\n"
+
+    "PARTNER PROVIDERS (all in Greater Manchester):\n"
+    "Wigan & Leigh College — Wigan\n"
+    "University of Salford — Salford\n"
+    "Trafford & Stockport College — campuses in Stretford and Stockport\n"
+    "Tameside College — Ashton-under-Lyne\n"
+    "Bury College — Bury\n"
+    "Ada College — Manchester city centre; specialises in digital and technology\n\n"
+
+    "SUBJECT AREAS COVERED:\n"
+    "Engineering and Manufacturing Technologies — mechanical, electrical, "
+    "manufacturing, automotive\n"
+    "Information and Communication Technology — software development, networking, "
+    "cybersecurity, data\n"
+    "Construction, Planning and the Built Environment — building, civil engineering, "
+    "architecture, surveying\n"
+    "Health, Public Services and Care — nursing, healthcare, social care\n"
+    "Arts, Media and Publishing — creative arts, graphic design, media production\n"
+    "Business, Administration and Law — business management, finance, administration\n\n"
+
+    "JOB DATA SOURCES:\n"
+    "NCS — National Careers Service; UK government careers information\n"
+    "Prospects — UK graduate careers website with detailed job role information\n\n"
+
+    "Do not invent course titles, job titles, or facts not grounded in the above. "
+    "If you genuinely do not know, say so briefly and suggest the user explore the app. "
+    "Do not use markdown formatting — no bold, no bullet points, plain text only."
+)
+
+
+def chat_explain(message: str, chat_history: list) -> str:
+    """Direct Haiku call to answer a qualifications/pathway question. No tool use, no search.
+
+    Returns plain text answer, or a fallback string on failure.
+    """
+    if len(chat_history) > 10:
+        chat_history = chat_history[-10:]
+    messages = [{"role": m["role"], "content": m["content"]} for m in chat_history]
+    messages.append({"role": "user", "content": message})
+    try:
+        resp = httpx.post(
+            ANTHROPIC_URL,
+            headers={
+                "x-api-key":         ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type":      "application/json",
+            },
+            json={
+                "model":      HAIKU_MODEL,
+                "max_tokens": 300,
+                "system":     _EXPLAIN_SYSTEM,
+                "messages":   messages,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()["content"][0]["text"].strip()
+    except Exception as e:
+        print(f"[chat_explain] FAILED — {e}", flush=True)
+        return "I'm not able to answer that right now — try exploring the subject areas or qualifications above."
+
+
 _SPECIFY_SEARCHES_TOOL = {
     "name": "specify_searches",
     "description": "Specify what searches to run to answer the user query. Called before any retrieval happens.",
@@ -764,13 +861,16 @@ _SPECIFY_SEARCHES_TOOL = {
         "properties": {
             "query_type": {
                 "type": "string",
-                "enum": ["filter", "intent", "refine", "swerve", "out_of_scope"],
+                "enum": ["filter", "intent", "refine", "swerve", "out_of_scope", "explain"],
                 "description": (
                     "filter: structured category/field request. "
                     "intent: interest or goal expression. "
                     "refine: narrowing current candidate set. "
                     "swerve: domain change mid-session. "
-                    "out_of_scope: unrelated to courses or careers."
+                    "out_of_scope: unrelated to courses or careers. "
+                    "explain: question about how qualifications work, what levels mean, "
+                    "progression routes, providers, or subject areas — needs a direct answer, "
+                    "not a search. Set searches to [] and collection_action to none."
                 ),
             },
             "searches": {
@@ -854,7 +954,8 @@ _SPECIFY_SEARCHES_SYSTEM = (
     "Arts Media and Publishing, Business Administration and Law.\n\n"
     "Available providers: Wigan & Leigh College, University of Salford,\n"
     "Trafford & Stockport College, Tameside College, Bury College,\n"
-    "Ada College."
+    "Ada College.\n\n"
+    "For explain queries, set searches to [] and collection_action to none."
 )
 
 _SELECT_RESULTS_TOOL = {
@@ -2066,6 +2167,18 @@ def chat():
         return jsonify({
             "results":         [],
             "acknowledgement": spec.get("acknowledgement") or "I can only help with courses and careers — try asking about a subject area or job role.",
+            "search_type":     "none",
+            "candidate_set":   candidate_set,
+        })
+
+    # Stage 2 — explain: answer directly without searching
+    if spec.get("query_type") == "explain":
+        answer = chat_explain(message, chat_history)
+        print(f"[chat] explain response: {answer[:80]!r}", flush=True)
+        return jsonify({
+            "results":         [],
+            "response_text":   answer,
+            "acknowledgement": spec.get("acknowledgement") or "Here's how that works.",
             "search_type":     "none",
             "candidate_set":   candidate_set,
         })
