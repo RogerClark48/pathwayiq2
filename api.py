@@ -829,7 +829,7 @@ _EXPLAIN_SYSTEM = (
 )
 
 
-def chat_explain(message: str, chat_history: list) -> str:
+def chat_explain(message: str, chat_history: list, max_tokens: int = 300) -> str:
     """Direct Haiku call to answer a qualifications/pathway question. No tool use, no search.
 
     Returns plain text answer, or a fallback string on failure.
@@ -848,7 +848,7 @@ def chat_explain(message: str, chat_history: list) -> str:
             },
             json={
                 "model":      HAIKU_MODEL,
-                "max_tokens": 300,
+                "max_tokens": max_tokens,
                 "system":     _EXPLAIN_SYSTEM,
                 "messages":   messages,
             },
@@ -1988,7 +1988,7 @@ def job_progression(job_id):
     # Step 1 — Check cache
     cached = jobs_conn.execute(
         "SELECT narrative, inbound_json, outbound_json FROM job_progression_cache "
-        "WHERE job_id = ? AND prompt_version = 4", (job_id,)
+        "WHERE job_id = ? AND prompt_version = 5", (job_id,)
     ).fetchone()
     if cached:
         jobs_conn.close()
@@ -2057,32 +2057,31 @@ def job_progression(job_id):
         f"Overview: {job['overview']}\n"
         f"Typical duties: {job['typical_duties']}\n"
         f"Skills required: {job['skills_required']}\n\n"
-        f"AUTHORITATIVE ENTRY ROUTES (written by career experts — treat as definitive for how "
-        f"people reach this role and what qualifications or experience are typically required):\n"
+        f"ENTRY ROUTES (from NCS/Prospects career experts):\n"
         f"{job['entry_routes']}\n\n"
-        f"AUTHORITATIVE CAREER PROGRESSION (written by career experts — treat as definitive for "
-        f"where this role leads and what the natural next steps are):\n"
+        f"CAREER PROGRESSION (from NCS/Prospects career experts):\n"
         f"{job['career_prospects'] or job['progression']}\n\n"
         f"Here are {len(candidates)} candidate job profiles from our database:\n\n"
         f"{candidate_block}\n\n"
         f"Your task:\n"
         f"1. Identify up to 4 candidates that someone might typically come FROM before reaching "
         f"this role — roles that naturally lead here, usually at a lower seniority level. "
-        f"Use the authoritative entry routes above to guide your selection. "
+        f"Use the entry routes above to guide your selection. "
         f"Only include roles that are a genuinely close fit. Fewer strong connections are better than "
         f"padding the list with weak ones. If this is an entry-level role, there may be no natural "
         f"preceding roles — return an empty inbound array rather than forcing connections.\n"
         f"2. Identify up to 4 candidates this role might naturally progress TO — roles at a "
         f"higher seniority or broader responsibility level. "
-        f"Use the authoritative career progression above to guide your selection. "
+        f"Use the career progression above to guide your selection. "
         f"Only include roles that are a genuinely close fit. Fewer strong connections are better than "
         f"padding the list with weak ones. If this is a senior or specialist role near the top of its "
         f"field, there may be no natural outbound roles — return an empty outbound array rather than "
         f"forcing connections.\n"
         f"3. Write 2–3 sentences of warm, plain-English guidance explaining the progression "
         f"landscape for this role, suitable for a college student considering their future career. "
-        f"Draw on the specific routes, qualifications, and next steps described in the authoritative "
-        f"fields above — use their language and detail to make the narrative specific and grounded. "
+        f"Draw on the specific routes, qualifications, and next steps in the career progression "
+        f"above — use their detail to make the narrative specific and grounded. "
+        f"Do not name or cite the sources (NCS, Prospects, career experts) — just use the information. "
         f"Keep it practical and directly relevant to this role.\n\n"
         f"Only select candidates from the list provided. If no candidates fit naturally as "
         f"inbound or outbound, return an empty array for that direction — do not force connections.\n\n"
@@ -2103,7 +2102,7 @@ def job_progression(job_id):
             },
             json={
                 "model":      SONNET_MODEL,
-                "max_tokens": 1000,
+                "max_tokens": 1500,
                 "system":     PROGRESSION_SYSTEM_PROMPT,
                 "messages":   [{"role": "user", "content": user_prompt}],
             },
@@ -2127,7 +2126,7 @@ def job_progression(job_id):
         jobs_conn.execute(
             "INSERT OR REPLACE INTO job_progression_cache "
             "(job_id, narrative, inbound_json, outbound_json, prompt_version, created_at) "
-            "VALUES (?, ?, ?, ?, 4, ?)",
+            "VALUES (?, ?, ?, ?, 5, ?)",
             (job_id,
              result["narrative"],
              json.dumps(result.get("inbound", [])),
@@ -2149,6 +2148,62 @@ def job_progression(job_id):
         "inbound":         result.get("inbound", []),
         "outbound":        result.get("outbound", []),
     })
+
+
+@app.get("/jobs/<int:job_id>/explain")
+def job_explain(job_id):
+    jobs_conn = sqlite3.connect(JOBS_DB)
+    jobs_conn.row_factory = sqlite3.Row
+
+    # Check cache
+    cached = jobs_conn.execute(
+        "SELECT explain_text FROM job_progression_cache WHERE job_id = ? AND explain_text IS NOT NULL",
+        (job_id,)
+    ).fetchone()
+    if cached:
+        jobs_conn.close()
+        print(f"[explain] job_id={job_id} cache hit", flush=True)
+        return jsonify({"text": cached["explain_text"]})
+
+    # Get job title
+    job = jobs_conn.execute(
+        "SELECT id, title FROM jobs WHERE id = ?", (str(job_id),)
+    ).fetchone()
+    if not job:
+        jobs_conn.close()
+        return jsonify({"error": "Job not found"}), 404
+
+    title = job["title"]
+    query = (
+        f"Tell me about the career pathway for {title} — what the role involves, "
+        f"how people typically get into it, what qualifications or experience help, "
+        f"and where it can lead."
+    )
+
+    print(f"[explain] job_id={job_id} title={title!r} — calling Haiku", flush=True)
+    text = chat_explain(query, [], max_tokens=600)
+
+    # Cache against existing progression cache row if present, otherwise insert
+    existing = jobs_conn.execute(
+        "SELECT job_id FROM job_progression_cache WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    try:
+        if existing:
+            jobs_conn.execute(
+                "UPDATE job_progression_cache SET explain_text = ? WHERE job_id = ?",
+                (text, job_id)
+            )
+        else:
+            jobs_conn.execute(
+                "INSERT INTO job_progression_cache (job_id, explain_text) VALUES (?, ?)",
+                (job_id, text)
+            )
+        jobs_conn.commit()
+    except Exception as e:
+        print(f"[explain] cache write failed ({e})", flush=True)
+
+    jobs_conn.close()
+    return jsonify({"text": text})
 
 
 @app.post("/chat")

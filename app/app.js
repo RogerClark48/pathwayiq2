@@ -723,7 +723,7 @@ function progressionRoleRow(job) {
   return row;
 }
 
-function buildProgressionCard(data, currentJobTitle) {
+function buildProgressionCard(data, currentJobTitle, jobId) {
   const card = document.createElement('div');
   card.className = 'card progression-card';
 
@@ -750,6 +750,41 @@ function buildProgressionCard(data, currentJobTitle) {
   narrative.className = 'progression-narrative';
   narrative.textContent = data.narrative;
   card.appendChild(narrative);
+
+  // Tell me more button + inline expansion
+  const moreBtn = document.createElement('button');
+  moreBtn.className = 'pill pill-outline-teal';
+  moreBtn.textContent = 'Tell me more';
+  moreBtn.style.marginTop = '4px';
+  moreBtn.style.marginBottom = '16px';
+
+  const morePanel = document.createElement('div');
+  morePanel.className = 'progression-more-panel';
+  morePanel.style.display = 'none';
+
+  moreBtn.addEventListener('click', async () => {
+    if (morePanel.style.display !== 'none') {
+      morePanel.style.display = 'none';
+      moreBtn.textContent = 'Tell me more';
+      return;
+    }
+    moreBtn.textContent = 'Loading…';
+    moreBtn.disabled = true;
+    try {
+      const data = await apiFetch(`/jobs/${jobId}/explain`);
+      morePanel.textContent = data.text;
+      morePanel.style.display = 'block';
+      moreBtn.textContent = 'Show less';
+    } catch (err) {
+      morePanel.textContent = 'Could not load additional information.';
+      morePanel.style.display = 'block';
+      moreBtn.textContent = 'Tell me more';
+    }
+    moreBtn.disabled = false;
+  });
+
+  card.appendChild(moreBtn);
+  card.appendChild(morePanel);
 
   // Ladder: outbound (higher) → current → inbound (lower)
   const ladder = document.createElement('div');
@@ -825,7 +860,7 @@ async function loadProgressionCard(jobId, currentJobTitle) {
 
   try {
     const data = await apiFetch(`/jobs/${jobId}/progression`);
-    const newCard = buildProgressionCard(data, currentJobTitle);
+    const newCard = buildProgressionCard(data, currentJobTitle, jobId);
     loadingCard.replaceWith(newCard);
   } catch (err) {
     loadingText.textContent = 'Could not load career pathway.';

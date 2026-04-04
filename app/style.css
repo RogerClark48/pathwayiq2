@@ -1015,6 +1015,16 @@ body {
   font-style: italic;
   padding: 2px 0;
 }
+.progression-more-panel {
+  margin-top: 12px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
 .ai-disclaimer {
   margin-top: 14px;
   font-size: 11px;
