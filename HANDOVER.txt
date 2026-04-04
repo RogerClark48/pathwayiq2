@@ -1,6 +1,6 @@
 PathwayIQ v2 — Developer Handover
 ===================================
-Last updated: 2026-04-03
+Last updated: 2026-04-04
 Client: Scott Clark Consultants
 Deployment: GMIoT (Greater Manchester IoT) Course and Career Explorer
 
@@ -42,7 +42,7 @@ app/app.js              All frontend JS — card rendering, chat, navigation
 gmiot.sqlite            83 GMIoT courses (table: gmiot_courses, PK: course_id)
 job_roles_asset.db      1,252 NCS/Prospects job roles (table: jobs, PK: id)
                           also contains: job_progression_cache table (see below)
-connections.db          Pre-computed course→job connections (850 pairs)
+connections.db          Pre-computed course→job connections (1,349 pairs)
 se_data.db              Skills England apprenticeship standards and progressions
 chroma_store/           Chroma vector store — four collections (see below)
 .env                    API keys — not committed to git
@@ -53,27 +53,32 @@ DATABASES IN DETAIL
 
 gmiot.sqlite — table: gmiot_courses
   course_id, course_title, provider, qual_type, level, ssa_code, ssa_label,
-  overview, what_you_will_learn, entry_requirements, progression, course_url, mode
+  overview, what_you_will_learn, entry_requirements, progression, course_url, mode,
+  campus_name
   - 83 courses across 6 partner providers
   - level: RQF integer 1–7 (4 nulls are Short Courses — correct)
+  - campus_name: physical campus location within a provider — ~59% populated
   - ssa_label: used for subject tile navigation (exact match)
   - qual_type: used for qualification tile navigation
 
 job_roles_asset.db — table: jobs
   id, title, source (NCS|Prospects), url, level,
   overview, typical_duties, skills_required, entry_routes, salary, progression,
-  salary_min, salary_max, qualifications_summary, typical_hours
+  career_prospects, salary_min, salary_max, qualifications_summary, typical_hours
   - 1,252 rows; 1,216 have named content fields; 36 have NULL content — handle gracefully
   - Same job title can appear from both NCS and Prospects — this is intentional
   - salary_min/salary_max: integers; 0 is used as a null sentinel
   - level: RQF integer 1–7, assigned by Haiku from entry_routes + qualifications_summary
+  - career_prospects: full career progression section scraped from source pages — used as
+    primary authoritative input to Sonnet progression card generation. Falls back to the
+    condensed `progression` field if absent. Populated by scripts/scrape_career_prospects.py
 
 job_roles_asset.db — table: job_progression_cache
   job_id (PK), narrative, inbound_json, outbound_json, prompt_version, created_at
   - Demand-driven cache: populated on first user request per job, then served from cache
   - narrative: 2–3 sentence plain-English career progression guidance (Sonnet-generated)
   - inbound_json / outbound_json: JSON arrays of {id, title} for related roles
-  - prompt_version=1: old rows without this version are ignored (allows prompt changes
+  - prompt_version=4: old rows without this version are ignored (allows prompt changes
     without deleting the table)
 
 connections.db — table: connections
@@ -81,7 +86,7 @@ connections.db — table: connections
   - Compound PK on (course_id, job_id)
   - semantic_score: domain similarity % from Chroma cross-collection search
   - skills_score: what_you_will_learn vs skills_required cosine similarity %
-  - Built by scripts/build_connections.py — not updated at runtime
+  - 1,349 pairs across 83 courses — built by scripts/build_connections.py, not updated at runtime
 
 se_data.db — tables: se_routes, se_occupations, se_progressions
   - 951 approved apprenticeship standards with Voyage AI embeddings
@@ -162,13 +167,19 @@ Turn 1 — specify_searches
   Haiku receives: user message + session context (prior turns, browsing history,
   active candidate set summary).
   Haiku calls the specify_searches tool to declare what to search for:
-    - query_type: "intent" | "filter" | "refinement" | "clarification"
+    - query_type: "filter" | "intent" | "refine" | "swerve" | "out_of_scope" | "explain"
     - searches: list of {query, type (courses|jobs|both), scope, filters}
-    - collection_action: "build" | "extend" | "refine" | "none"
+    - collection_action: "build" | "refine" | "replace" | "none"
     - acknowledgement: one-sentence response for the bottom bar
 
   Filters Haiku can specify: ssa_label, qual_type, mode, provider, level.
   Scope can be "full_collection" or "candidate_set" (refines within prior results).
+
+  Special cases before retrieval fires:
+    out_of_scope — returns acknowledgement only, no search, candidate set unchanged
+    explain      — calls chat_explain() for a direct Haiku answer (no tool use, no
+                   search). Returns response_text rendered as a system bubble in the
+                   thread. Not counted as a qualifying interaction.
 
 Retrieval (backend)
   For each specified search: embed the query via Voyage AI, query Chroma with
@@ -218,7 +229,7 @@ First call per job:
 
 Subsequent calls:
   Read directly from cache. Cache is permanent — never expires unless prompt_version
-  changes (currently 1). The filter WHERE prompt_version = 1 in the query means
+  changes (currently 4). The filter WHERE prompt_version = 4 in the query means
   old rows are simply never returned if the version is bumped.
 
 

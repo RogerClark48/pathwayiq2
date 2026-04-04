@@ -16,7 +16,7 @@ This is **v2**. V1 is preserved at `C:\Dev\pathwayiq`. V2 adds a structured qual
 |---|---|
 | Jobs database | SQLite — `job_roles_asset.db` — 1,252 records (1,216 with named content fields; 36 with NULL content) |
 | Courses database | SQLite — `gmiot.sqlite` — 83 GMIoT courses |
-| Connections database | SQLite — `connections.db` — pre-computed course→job connections (850 pairs, 83 courses) |
+| Connections database | SQLite — `connections.db` — pre-computed course→job connections (1,349 pairs, 83 courses) |
 | SE data | SQLite — `se_data.db` — 951 SE occupations, 2,644 progression pairs, embeddings |
 | Vector store | Chroma — `chroma_store/` — `gmiot_jobs` (~2,432 chunks) + `gmiot_courses` (166 chunks) |
 | Embeddings | Voyage AI `voyage-3.5` (1024 dims) — cloud API (`VOYAGE_API_KEY` in `.env`) |
@@ -42,7 +42,7 @@ This is **v2**. V1 is preserved at `C:\Dev\pathwayiq`. V2 adds a structured qual
 
 ## Anthropic API usage
 
-**Chat and advisory:** Claude Haiku. Two-turn tool-use pattern — Haiku directs retrieval via `specify_searches`, backend executes, Haiku selects via `select_results`.
+**Chat and advisory:** Claude Haiku. Two-turn tool-use pattern — Haiku directs retrieval via `specify_searches`, backend executes, Haiku selects via `select_results`. Exception: `query_type="explain"` short-circuits before retrieval — Haiku answers directly via `chat_explain()` (plain call, no tool use) for questions about qualifications, levels, providers, and pathways. Answer rendered as a system bubble in the thread; not counted as a qualifying interaction.
 
 **Advisory cards:** Claude Sonnet. System-initiated, minimum 4-interaction threshold, 5-interaction spacing.
 
@@ -121,6 +121,7 @@ vector = result.embeddings[0]
 - All named content fields 100% populated: `overview`, `what_you_will_learn`, `entry_requirements`, `progression`
 - `level` field: 95% populated — 4 nulls are Short Courses where null is correct
 - `mode`: 45% populated — delivery mode (full-time, part-time etc.)
+- `campus_name`: ~59% populated — physical campus location within a provider
 - `esco_code`: empty throughout — not used
 - SSA classification: `ssa_code` (1–15) + `ssa_label` (full text) — assigned by Sonnet
 - Subject tile navigation matches on `ssa_label` (exact text match, no embedding)
@@ -195,6 +196,7 @@ Compound PK on `(std_code_from, std_code_to)` — no duplicates.
 **Pipeline scripts** (in `scripts/`):
 - `pull_se_data.py` — pulls routes, occupations, progressions
 - `assign_routes.py` — assigns route_id to occupations via Routes/{id}
+- `embed_field_specific.py` — creates field-specific Chroma collections. Uses `os.path` with `__file__` to resolve paths relative to the script location — run from any directory, paths resolve correctly to project root.
 - *(archived)* `pull_se_typical_titles.py`, `embed_se_occupations.py`, `embed_job_titles.py`, `tag_stdcodes.py` — moved to `scripts/archive/`; stdCode tagging approach retired
 
 ### `job_progression_cache` (`job_roles_asset.db`)
@@ -207,10 +209,10 @@ Demand-driven cache of Sonnet-generated progression results. One row per job. Po
 | `narrative` | TEXT | 2–3 sentence plain-English guidance from Sonnet |
 | `inbound_json` | TEXT | JSON array of `{"id": N, "title": "..."}` — roles that lead to this one |
 | `outbound_json` | TEXT | JSON array of `{"id": N, "title": "..."}` — roles this leads to |
-| `prompt_version` | INTEGER | 1 — increment when prompt changes to invalidate cache |
+| `prompt_version` | INTEGER | 4 — increment when prompt changes to invalidate cache |
 | `created_at` | TEXT | ISO timestamp |
 
-Served by `GET /jobs/<id>/progression` in api.py. Candidates sourced from Chroma cross-collection search (top 30 nearest jobs). `prompt_version = 1` filter means old cache rows survive prompt changes without deletion — they just don't match the filter.
+Served by `GET /jobs/<id>/progression` in api.py. Candidates sourced from Chroma cross-collection search (top 30 nearest jobs). `prompt_version = 4` filter means old cache rows survive prompt changes without deletion — they just don't match the filter.
 
 ### `connections.db` — pre-computed course→job connections (v2)
 
@@ -222,7 +224,7 @@ Served by `GET /jobs/<id>/progression` in api.py. Candidates sourced from Chroma
 | `skills_score` | INTEGER | Skills alignment % (what_you_will_learn vs skills_required) |
 | `created_at` | TEXT | Timestamp |
 
-Compound PK on `(course_id, job_id)`. 850 pairs across 83 courses. Built by `scripts/build_connections.py` — semantic search + level gap filter (job.level ≤ course.level + 2) + Haiku domain gatekeeping. Served by `/courses/<id>/careers` in api.py with `"source": "connections_table"` in response; falls back to live Chroma search if no rows found.
+Compound PK on `(course_id, job_id)`. 1,349 pairs across 83 courses. Built by `scripts/build_connections.py` — semantic search + level gap filter (job.level ≤ course.level + 2) + Haiku domain gatekeeping. Served by `/courses/<id>/careers` in api.py with `"source": "connections_table"` in response; falls back to live Chroma search if no rows found.
 
 ---
 
