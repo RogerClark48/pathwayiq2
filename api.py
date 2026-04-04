@@ -41,6 +41,14 @@ SONNET_MODEL       = "claude-sonnet-4-6"
 PROGRESSION_SYSTEM_PROMPT = (
     "You are a career guidance advisor helping college students understand career pathways. "
     "You give warm, honest, plain-English advice grounded in how careers actually develop. "
+    "The job profiles you receive include two authoritative fields written by career experts at "
+    "the National Careers Service and Prospects: 'Entry routes' describes how people actually get "
+    "into this role, and 'Career progression' describes where this role leads. "
+    "These fields are your primary source for progression — use them to shape both your "
+    "selection of inbound/outbound roles and the language of your narrative. Draw on the specific "
+    "routes, qualifications, and next steps they describe. Where your own knowledge adds useful "
+    "context or more current detail — such as emerging roles, updated qualification routes, or "
+    "recent industry trends — you may supplement the expert content, but do not contradict it. "
     "You must respond with valid JSON only. "
     "Do not use markdown code blocks, backticks, or any text outside the JSON object itself."
 )
@@ -1980,7 +1988,7 @@ def job_progression(job_id):
     # Step 1 — Check cache
     cached = jobs_conn.execute(
         "SELECT narrative, inbound_json, outbound_json FROM job_progression_cache "
-        "WHERE job_id = ? AND prompt_version = 3", (job_id,)
+        "WHERE job_id = ? AND prompt_version = 4", (job_id,)
     ).fetchone()
     if cached:
         jobs_conn.close()
@@ -1995,7 +2003,7 @@ def job_progression(job_id):
 
     # Step 2 — Get current job profile
     job = jobs_conn.execute(
-        "SELECT id, title, overview, typical_duties, skills_required, entry_routes, progression "
+        "SELECT id, title, overview, typical_duties, skills_required, entry_routes, progression, career_prospects "
         "FROM jobs WHERE id = ?", (str(job_id),)
     ).fetchone()
     if not job or not job["overview"]:
@@ -2048,28 +2056,34 @@ def job_progression(job_id):
         f"Title: {job['title']}\n"
         f"Overview: {job['overview']}\n"
         f"Typical duties: {job['typical_duties']}\n"
-        f"Skills required: {job['skills_required']}\n"
-        f"Entry routes: {job['entry_routes']}\n"
-        f"Career progression: {job['progression']}\n\n"
+        f"Skills required: {job['skills_required']}\n\n"
+        f"AUTHORITATIVE ENTRY ROUTES (written by career experts — treat as definitive for how "
+        f"people reach this role and what qualifications or experience are typically required):\n"
+        f"{job['entry_routes']}\n\n"
+        f"AUTHORITATIVE CAREER PROGRESSION (written by career experts — treat as definitive for "
+        f"where this role leads and what the natural next steps are):\n"
+        f"{job['career_prospects'] or job['progression']}\n\n"
         f"Here are {len(candidates)} candidate job profiles from our database:\n\n"
         f"{candidate_block}\n\n"
         f"Your task:\n"
         f"1. Identify up to 4 candidates that someone might typically come FROM before reaching "
         f"this role — roles that naturally lead here, usually at a lower seniority level. "
+        f"Use the authoritative entry routes above to guide your selection. "
         f"Only include roles that are a genuinely close fit. Fewer strong connections are better than "
         f"padding the list with weak ones. If this is an entry-level role, there may be no natural "
         f"preceding roles — return an empty inbound array rather than forcing connections.\n"
         f"2. Identify up to 4 candidates this role might naturally progress TO — roles at a "
         f"higher seniority or broader responsibility level. "
+        f"Use the authoritative career progression above to guide your selection. "
         f"Only include roles that are a genuinely close fit. Fewer strong connections are better than "
         f"padding the list with weak ones. If this is a senior or specialist role near the top of its "
         f"field, there may be no natural outbound roles — return an empty outbound array rather than "
         f"forcing connections.\n"
         f"3. Write 2–3 sentences of warm, plain-English guidance explaining the progression "
         f"landscape for this role, suitable for a college student considering their future career. "
-        f"Where relevant, briefly mention the types of qualifications or training that support "
-        f"progression — for example apprenticeships, HNCs, HNDs, degrees, or professional "
-        f"accreditations. Keep it practical and specific to this role where possible.\n\n"
+        f"Draw on the specific routes, qualifications, and next steps described in the authoritative "
+        f"fields above — use their language and detail to make the narrative specific and grounded. "
+        f"Keep it practical and directly relevant to this role.\n\n"
         f"Only select candidates from the list provided. If no candidates fit naturally as "
         f"inbound or outbound, return an empty array for that direction — do not force connections.\n\n"
         f'Respond with this JSON structure only:\n'
@@ -2113,7 +2127,7 @@ def job_progression(job_id):
         jobs_conn.execute(
             "INSERT OR REPLACE INTO job_progression_cache "
             "(job_id, narrative, inbound_json, outbound_json, prompt_version, created_at) "
-            "VALUES (?, ?, ?, ?, 3, ?)",
+            "VALUES (?, ?, ?, ?, 4, ?)",
             (job_id,
              result["narrative"],
              json.dumps(result.get("inbound", [])),
