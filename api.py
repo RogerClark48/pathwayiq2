@@ -1980,7 +1980,7 @@ def job_progression(job_id):
     # Step 1 — Check cache
     cached = jobs_conn.execute(
         "SELECT narrative, inbound_json, outbound_json FROM job_progression_cache "
-        "WHERE job_id = ? AND prompt_version = 2", (job_id,)
+        "WHERE job_id = ? AND prompt_version = 3", (job_id,)
     ).fetchone()
     if cached:
         jobs_conn.close()
@@ -2055,9 +2055,16 @@ def job_progression(job_id):
         f"{candidate_block}\n\n"
         f"Your task:\n"
         f"1. Identify up to 4 candidates that someone might typically come FROM before reaching "
-        f"this role — roles that naturally lead here, usually at a lower seniority level\n"
+        f"this role — roles that naturally lead here, usually at a lower seniority level. "
+        f"Only include roles that are a genuinely close fit. Fewer strong connections are better than "
+        f"padding the list with weak ones. If this is an entry-level role, there may be no natural "
+        f"preceding roles — return an empty inbound array rather than forcing connections.\n"
         f"2. Identify up to 4 candidates this role might naturally progress TO — roles at a "
-        f"higher seniority or broader responsibility level\n"
+        f"higher seniority or broader responsibility level. "
+        f"Only include roles that are a genuinely close fit. Fewer strong connections are better than "
+        f"padding the list with weak ones. If this is a senior or specialist role near the top of its "
+        f"field, there may be no natural outbound roles — return an empty outbound array rather than "
+        f"forcing connections.\n"
         f"3. Write 2–3 sentences of warm, plain-English guidance explaining the progression "
         f"landscape for this role, suitable for a college student considering their future career. "
         f"Where relevant, briefly mention the types of qualifications or training that support "
@@ -2106,7 +2113,7 @@ def job_progression(job_id):
         jobs_conn.execute(
             "INSERT OR REPLACE INTO job_progression_cache "
             "(job_id, narrative, inbound_json, outbound_json, prompt_version, created_at) "
-            "VALUES (?, ?, ?, ?, 2, ?)",
+            "VALUES (?, ?, ?, ?, 3, ?)",
             (job_id,
              result["narrative"],
              json.dumps(result.get("inbound", [])),
