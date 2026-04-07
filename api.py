@@ -67,6 +67,7 @@ app = Flask(__name__)
 CORS(app)
 app.secret_key   = os.environ.get("SECRET_KEY", "dev-fallback-key")
 ADMIN_PASSWORD   = os.environ.get("ADMIN_PASSWORD", "admin")
+AUTH_ENABLED     = os.environ.get("AUTH_ENABLED", "false").lower() == "true"
 
 vo = voyageai.Client(api_key=os.environ.get("VOYAGE_API_KEY"))
 
@@ -1586,6 +1587,8 @@ _AUTH_EXEMPT = {"/access", "/logout"}
 @app.before_request
 def require_auth():
     """Gate all routes behind access code authentication."""
+    if not AUTH_ENABLED:
+        return
     if request.path in _AUTH_EXEMPT:
         return
     if request.path.startswith("/admin/"):
