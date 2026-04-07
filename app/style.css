@@ -266,8 +266,8 @@ body {
 }
 
 .transition-label {
-  font-size: 12px;
-  color: #9CA3AF;
+  font-size: 13px;
+  color: #000000;
   text-align: center;
   padding: 12px 0 6px;
 }
@@ -338,6 +338,12 @@ body {
   line-height: 1.6;
   color: #374151;
   white-space: pre-wrap;
+}
+
+.detail-postcode {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .detail-link {
@@ -707,6 +713,18 @@ body {
 /* ─── Saved items card ────────────────────────────────────────────────────── */
 .saved-card { border-top: 3px solid var(--teal); }
 
+.saved-map-wrap {
+  margin: 0 0 16px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.saved-map {
+  height: 300px;
+  width: 100%;
+}
+
 .saved-card-header {
   font-size: 16px;
   font-weight: 700;
@@ -795,10 +813,10 @@ body {
 }
 
 .pathway-link {
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   color: var(--teal);
   text-decoration: none;
-  opacity: 0.8;
+  opacity: 1;
 }
 
 .pathway-link:hover,

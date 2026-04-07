@@ -221,6 +221,77 @@ function buildSavedCard() {
     return card;
   }
 
+  // Map container — populated asynchronously after card is in the DOM
+  const savedCourseIds = savedItems
+    .filter(i => i.type === 'course')
+    .map(i => i.id);
+
+  if (savedCourseIds.length > 0) {
+    const mapWrap = document.createElement('div');
+    mapWrap.className = 'saved-map-wrap';
+    const mapEl = document.createElement('div');
+    mapEl.className = 'saved-map';
+    mapWrap.appendChild(mapEl);
+    card.appendChild(mapWrap);
+
+    // Initialise map after element is in DOM
+    setTimeout(async () => {
+      const map = L.map(mapEl, { zoomControl: true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 18,
+      }).addTo(map);
+
+      const markers = [];
+
+      try {
+        const resp = await fetch(API_BASE + '/saved/campuses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ course_ids: savedCourseIds }),
+        });
+        const campuses = await resp.json();
+
+        campuses.forEach(campus => {
+          const courseList = campus.courses.map(t => `<li>${t}</li>`).join('');
+          const popup = `<strong>${campus.provider}</strong><br>${campus.campus_name} · ${campus.postcode}<ul style="margin:6px 0 0;padding-left:16px;">${courseList}</ul>`;
+          const marker = L.marker([campus.lat, campus.lng])
+            .addTo(map)
+            .bindPopup(popup);
+          markers.push(marker);
+        });
+      } catch (err) {
+        console.error('Could not load campus data', err);
+      }
+
+      // User location
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          const userLatLng = [pos.coords.latitude, pos.coords.longitude];
+          const userMarker = L.circleMarker(userLatLng, {
+            radius: 8, color: '#0d9488', fillColor: '#0d9488', fillOpacity: 0.9, weight: 2,
+          }).addTo(map).bindPopup('Your location');
+          markers.push(userMarker);
+          if (markers.length > 0) {
+            const group = L.featureGroup(markers);
+            map.fitBounds(group.getBounds().pad(0.15));
+          }
+        }, () => {
+          // Permission denied — fit to campus markers only
+          if (markers.length > 0) {
+            const group = L.featureGroup(markers);
+            map.fitBounds(group.getBounds().pad(0.15));
+          }
+        });
+      } else {
+        if (markers.length > 0) {
+          const group = L.featureGroup(markers);
+          map.fitBounds(group.getBounds().pad(0.15));
+        }
+      }
+    }, 0);
+  }
+
   const list = document.createElement('div');
   list.className = 'saved-list';
 
@@ -305,6 +376,13 @@ function buildDetailPanel(data, type) {
       p.className = 'detail-body';
       p.textContent = 'No details available.';
       panel.appendChild(p);
+    }
+
+    if (data.postcode) {
+      const loc = document.createElement('p');
+      loc.className = 'detail-postcode';
+      loc.textContent = data.campus_name ? `${data.campus_name} · ${data.postcode}` : data.postcode;
+      panel.appendChild(loc);
     }
 
     if (data.course_url) {

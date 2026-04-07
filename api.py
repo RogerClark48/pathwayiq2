@@ -200,7 +200,10 @@ def gmiot_course_row(course_id: str) -> dict | None:
     conn = sqlite3.connect(GMIOT_DB)
     conn.row_factory = sqlite3.Row
     row = conn.execute(
-        "SELECT * FROM gmiot_courses WHERE course_id = ?", (course_id,)
+        "SELECT c.*, camp.postcode, camp.lat, camp.lng "
+        "FROM gmiot_courses c "
+        "LEFT JOIN campuses camp ON c.campus_id = camp.campus_id "
+        "WHERE c.course_id = ?", (course_id,)
     ).fetchone()
     conn.close()
     return dict(row) if row else None
@@ -1816,8 +1819,8 @@ _ACCESS_PAGE_HTML = """<!DOCTYPE html>
   <div class="tagline">Course &amp; Career Explorer</div>
   {{ERROR_BLOCK}}
   <form method="POST" action="/access">
-    <label for="code">Access code</label>
-    <input type="text" id="code" name="code" placeholder="e.g. maple-7734" autocomplete="off" autofocus>
+    <label for="code">Enter the access code you were given</label>
+    <input type="text" id="code" name="code" placeholder="e.g. maple-7734" autocomplete="one-time-code" autofocus>
     <button type="submit">Continue</button>
   </form>
 </div>
@@ -2251,6 +2254,10 @@ def course_detail(course_id):
         "course_url":           db.get("course_url"),
         "ssa_code":             db.get("ssa_code"),
         "ssa_label":            db.get("ssa_label"),
+        "campus_name":          db.get("campus_name") or "",
+        "postcode":             db.get("postcode") or "",
+        "lat":                  db.get("lat"),
+        "lng":                  db.get("lng"),
         "overview":             db.get("overview") or "",
         "what_you_will_learn":  db.get("what_you_will_learn") or "",
         "entry_requirements":   db.get("entry_requirements") or "",
@@ -2507,6 +2514,46 @@ def job_explain(job_id):
 
     jobs_conn.close()
     return jsonify({"text": text})
+
+
+@app.post("/saved/campuses")
+def saved_campuses():
+    """Return deduplicated campus data (with coordinates) for a list of saved course IDs."""
+    body       = request.get_json(force=True) or {}
+    course_ids = body.get("course_ids", [])
+    if not course_ids:
+        return jsonify([])
+
+    placeholders = ",".join("?" * len(course_ids))
+    conn = sqlite3.connect(GMIOT_DB)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        f"SELECT c.course_id, c.course_title, c.provider, c.campus_name, "
+        f"camp.lat, camp.lng, camp.postcode "
+        f"FROM gmiot_courses c "
+        f"JOIN campuses camp ON c.campus_id = camp.campus_id "
+        f"WHERE c.course_id IN ({placeholders}) "
+        f"AND camp.lat IS NOT NULL AND camp.lng IS NOT NULL",
+        [int(i) for i in course_ids]
+    ).fetchall()
+    conn.close()
+
+    # Deduplicate by campus (lat/lng), aggregating course titles
+    campus_map = {}
+    for row in rows:
+        key = (row["lat"], row["lng"])
+        if key not in campus_map:
+            campus_map[key] = {
+                "provider":    row["provider"],
+                "campus_name": row["campus_name"],
+                "postcode":    row["postcode"],
+                "lat":         row["lat"],
+                "lng":         row["lng"],
+                "courses":     [],
+            }
+        campus_map[key]["courses"].append(row["course_title"])
+
+    return jsonify(list(campus_map.values()))
 
 
 @app.post("/chat")
