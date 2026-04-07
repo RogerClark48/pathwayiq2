@@ -7,7 +7,7 @@ import httpx
 import numpy as np
 import voyageai
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session, redirect, url_for, make_response
 from flask_cors import CORS
 from threading import Lock
 import chromadb
@@ -65,6 +65,8 @@ PROGRESSION_SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 CORS(app)
+app.secret_key   = os.environ.get("SECRET_KEY", "dev-fallback-key")
+ADMIN_PASSWORD   = os.environ.get("ADMIN_PASSWORD", "admin")
 
 vo = voyageai.Client(api_key=os.environ.get("VOYAGE_API_KEY"))
 
@@ -1576,6 +1578,330 @@ def chat_llm_call(message: str, candidates: list,
 
 
 # ---------------------------------------------------------------------------
+# Access code authentication
+# ---------------------------------------------------------------------------
+
+_AUTH_EXEMPT = {"/access", "/logout"}
+
+@app.before_request
+def require_auth():
+    """Gate all routes behind access code authentication."""
+    if request.path in _AUTH_EXEMPT:
+        return
+    if request.path.startswith("/admin/"):
+        return  # admin routes handle their own auth
+    if session.get("authenticated"):
+        return
+    return redirect(url_for("access_page"))
+
+
+@app.route("/access", methods=["GET", "POST"])
+def access_page():
+    error = None
+    if request.method == "POST":
+        submitted = (request.form.get("code") or "").strip().lower()
+        conn = sqlite3.connect(ANALYTICS_DB)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM access_codes WHERE LOWER(code) = ?", (submitted,)
+        ).fetchone()
+        if not row:
+            error = "Code not recognised"
+        elif row["expires_at"] and datetime.utcnow().isoformat() > row["expires_at"]:
+            error = "This code has expired"
+        else:
+            conn.execute(
+                "UPDATE access_codes SET used_count = used_count + 1 WHERE code = ?",
+                (row["code"],)
+            )
+            conn.commit()
+            conn.close()
+            session["authenticated"] = True
+            return redirect(url_for("serve_index"))
+        conn.close()
+
+    return make_response(_render_access_page(error))
+
+
+@app.get("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("access_page"))
+
+
+# ---------------------------------------------------------------------------
+# Admin
+# ---------------------------------------------------------------------------
+
+import base64
+import random
+
+_WORDLIST = [
+    "maple","cedar","amber","river","stone","cloud","bloom","spark","frost","heron",
+    "solar","dunes","tidal","grove","ember","delta","crest","flint","haven","lunar",
+]
+
+def _check_admin_auth():
+    """Returns True if the request carries valid Basic Auth for admin."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(auth[6:]).decode("utf-8")
+        _, password = decoded.split(":", 1)
+        return password == ADMIN_PASSWORD
+    except Exception:
+        return False
+
+
+@app.route("/admin/codes", methods=["GET", "POST"])
+def admin_codes():
+    if not _check_admin_auth():
+        resp = make_response("Unauthorised", 401)
+        resp.headers["WWW-Authenticate"] = 'Basic realm="PathwayIQ Admin"'
+        return resp
+
+    new_code = None
+    conn = sqlite3.connect(ANALYTICS_DB)
+    conn.row_factory = sqlite3.Row
+
+    if request.method == "POST":
+        label    = (request.form.get("label") or "").strip() or "Unlabelled"
+        days_str = (request.form.get("days") or "").strip()
+        expires_at = None
+        if days_str:
+            try:
+                from datetime import timedelta
+                expires_at = (datetime.utcnow() + timedelta(days=int(days_str))).isoformat()
+            except ValueError:
+                pass
+        word     = random.choice(_WORDLIST)
+        digits   = str(random.randint(1000, 9999))
+        new_code = f"{word}-{digits}"
+        now      = datetime.utcnow().isoformat()
+        conn.execute(
+            "INSERT INTO access_codes (code, label, expires_at, created_at, used_count) "
+            "VALUES (?, ?, ?, ?, 0)",
+            (new_code, label, expires_at, now)
+        )
+        conn.commit()
+
+    rows = conn.execute(
+        "SELECT code, label, expires_at, created_at, used_count FROM access_codes "
+        "ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+
+    now_iso = datetime.utcnow().isoformat()
+    table_rows = ""
+    for r in rows:
+        if r["expires_at"]:
+            expires_display = r["expires_at"][:16].replace("T", " ")
+            status = "Expired" if now_iso > r["expires_at"] else "Active"
+            status_cls = "expired" if status == "Expired" else "active"
+        else:
+            expires_display = "Permanent"
+            status = "Active"
+            status_cls = "active"
+        highlight = ' style="background:#fffbe6;font-weight:bold;"' if r["code"] == new_code else ""
+        table_rows += (
+            f"<tr{highlight}>"
+            f"<td>{r['code']}</td>"
+            f"<td>{r['label']}</td>"
+            f"<td>{expires_display}</td>"
+            f"<td>{r['used_count']}</td>"
+            f"<td class='{status_cls}'>{status}</td>"
+            f"</tr>\n"
+        )
+
+    new_code_html = ""
+    if new_code:
+        new_code_html = (
+            f'<p style="margin:12px 0;padding:10px 14px;background:#d1fae5;'
+            f'border:1px solid #6ee7b7;border-radius:6px;font-family:monospace;font-size:16px;">'
+            f'New code: <strong>{new_code}</strong></p>'
+        )
+
+    html = _ADMIN_PAGE_HTML.replace("{{TABLE_ROWS}}", table_rows).replace("{{NEW_CODE}}", new_code_html)
+    return make_response(html)
+
+
+# ---------------------------------------------------------------------------
+# Access page HTML
+# ---------------------------------------------------------------------------
+
+_ACCESS_PAGE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PathwayIQ — Enter access code</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0f172a;
+    color: #f1f5f9;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 40px 32px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  .brand {
+    font-size: 22px;
+    font-weight: 600;
+    color: #0d9488;
+    margin-bottom: 6px;
+  }
+  .tagline {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-bottom: 32px;
+  }
+  label {
+    display: block;
+    font-size: 13px;
+    color: #94a3b8;
+    margin-bottom: 6px;
+  }
+  input[type=text] {
+    width: 100%;
+    padding: 10px 14px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    color: #f1f5f9;
+    font-size: 16px;
+    outline: none;
+    margin-bottom: 16px;
+  }
+  input[type=text]:focus { border-color: #0d9488; }
+  button {
+    width: 100%;
+    padding: 11px;
+    background: #0d9488;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  button:hover { background: #0f766e; }
+  .error {
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background: #450a0a;
+    border: 1px solid #b91c1c;
+    border-radius: 8px;
+    color: #fca5a5;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">PathwayIQ</div>
+  <div class="tagline">Course &amp; Career Explorer</div>
+  {{ERROR_BLOCK}}
+  <form method="POST" action="/access">
+    <label for="code">Access code</label>
+    <input type="text" id="code" name="code" placeholder="e.g. maple-7734" autocomplete="off" autofocus>
+    <button type="submit">Continue</button>
+  </form>
+</div>
+</body>
+</html>"""
+
+_ACCESS_PAGE_HTML = _ACCESS_PAGE_HTML.replace(
+    "{{ERROR_BLOCK}}",
+    '<div class="error">{{ERROR}}</div>' if False else "{{ERROR_BLOCK}}"
+)
+
+# Rebuild with proper conditional error block handling
+def _render_access_page(error=None):
+    error_block = f'<div class="error">{error}</div>' if error else ""
+    return _ACCESS_PAGE_HTML.replace("{{ERROR_BLOCK}}", error_block).replace("{{ERROR}}", "")
+
+
+# ---------------------------------------------------------------------------
+# Admin page HTML
+# ---------------------------------------------------------------------------
+
+_ADMIN_PAGE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PathwayIQ Admin — Access Codes</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f8fafc; color: #1e293b; padding: 32px 24px; }
+  h1 { font-size: 20px; color: #0d9488; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #64748b; margin-bottom: 28px; }
+  h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: #334155; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 32px; font-size: 14px; }
+  th { text-align: left; padding: 8px 12px; background: #e2e8f0; color: #475569; font-weight: 600; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e2e8f0; }
+  .active { color: #059669; font-weight: 600; }
+  .expired { color: #dc2626; }
+  .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  label { font-size: 13px; color: #475569; }
+  input[type=text], input[type=number] {
+    padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;
+    font-size: 14px; width: 220px; outline: none;
+  }
+  input[type=number] { width: 100px; }
+  input:focus { border-color: #0d9488; }
+  button {
+    padding: 9px 20px; background: #0d9488; color: #fff; border: none;
+    border-radius: 6px; font-size: 14px; cursor: pointer;
+  }
+  button:hover { background: #0f766e; }
+  .hint { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>PathwayIQ Admin</h1>
+<p class="sub">Access code management</p>
+
+<h2>Current codes</h2>
+<table>
+  <thead><tr><th>Code</th><th>Label</th><th>Expires</th><th>Used</th><th>Status</th></tr></thead>
+  <tbody>{{TABLE_ROWS}}</tbody>
+</table>
+
+{{NEW_CODE}}
+
+<h2>Generate new code</h2>
+<form method="POST" action="/admin/codes">
+  <div class="form-row">
+    <div class="field">
+      <label for="label">Label</label>
+      <input type="text" id="label" name="label" placeholder="e.g. Claire GMIoT" required>
+    </div>
+    <div class="field">
+      <label for="days">Duration (days)</label>
+      <input type="number" id="days" name="days" placeholder="Leave blank = permanent" min="1">
+    </div>
+    <button type="submit">Generate</button>
+  </div>
+  <p class="hint">Leave duration blank for a permanent code.</p>
+</form>
+</body>
+</html>"""
+
+
+# ---------------------------------------------------------------------------
 # Static file serving
 # ---------------------------------------------------------------------------
 
@@ -2354,7 +2680,7 @@ def chat():
 # Analytics
 # ---------------------------------------------------------------------------
 def _init_analytics_db():
-    """Create analytics.db and events table if they don't exist (first-run on fresh deploy)."""
+    """Create analytics.db tables if they don't exist (first-run on fresh deploy)."""
     try:
         conn = sqlite3.connect(ANALYTICS_DB)
         conn.execute(
@@ -2362,6 +2688,14 @@ def _init_analytics_db():
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "session_id TEXT NOT NULL, ts TEXT NOT NULL, event TEXT NOT NULL, "
             "entity_type TEXT, entity_id INTEGER, entity_title TEXT, meta TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS access_codes ("
+            "code TEXT PRIMARY KEY, "
+            "label TEXT NOT NULL, "
+            "expires_at TEXT, "
+            "created_at TEXT NOT NULL, "
+            "used_count INTEGER NOT NULL DEFAULT 0)"
         )
         conn.commit()
         conn.close()
