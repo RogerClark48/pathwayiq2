@@ -125,7 +125,7 @@ vector = result.embeddings[0]
 - `esco_code`: empty throughout — not used
 - SSA classification: `ssa_code` (1–15) + `ssa_label` (full text) — assigned by Sonnet
 - Subject tile navigation matches on `ssa_label` (exact text match, no embedding)
-- Qual tile navigation matches on `qual_type` IN list (see `QUAL_FILTER_MAP` in api.py)
+- Qual tile navigation matches on `qual_type` IN list (see `QUAL_FILTER_MAP` in institution_config.py)
 - Two Chroma chunks per course in `gmiot_courses` collection:
   - `{course_id}_overview`: title + overview + what_you_will_learn
   - `{course_id}_skills`: title + entry_requirements + progression
@@ -316,16 +316,33 @@ Full spec: `PathwayIQ_Interface_Design_Spec_v2.docx`
 
 ## api.py — path constants
 
-All paths now point to v2. Current values in `api.py`:
+Generic paths are in `api.py`. The institution-specific courses DB path comes from `institution_config.py` (as `GMIOT_DB`):
 
 ```python
 CHROMA_PATH    = r"C:\Dev\pathwayiq2\chroma_store"
-GMIOT_DB       = r"C:\Dev\pathwayiq2\gmiot.sqlite"
 JOBS_DB        = r"C:\Dev\pathwayiq2\job_roles_asset.db"
 CONNECTIONS_DB = r"C:\Dev\pathwayiq2\connections.db"
+# GMIOT_DB imported from institution_config.COURSES_DB
 ```
 
-`COURSES_DB` remains pointing to v1 `emiot.sqlite` — it is dead code in v2. The `course_row()` function that used it is unused; all course queries use `GMIOT_DB`. Do not remove `COURSES_DB` without also removing `course_row()`.
+`COURSES_DB` in api.py remains pointing to v1 `emiot.sqlite` — it is dead code in v2. The `course_row()` function that used it is unused; all course queries use `GMIOT_DB`. Do not remove `COURSES_DB` without also removing `course_row()`.
+
+## institution_config.py — deploying for a different institution
+
+All institution-specific values are isolated in `institution_config.py`. To deploy PathwayIQ for a different institution, only this file needs to change:
+
+| Setting | Description |
+|---|---|
+| `INSTITUTION_NAME` | Short name used in UI and prompts |
+| `INSTITUTION_FULL_NAME` | Full name used in the explain system prompt |
+| `INSTITUTION_REGION` | Region used in provider list heading |
+| `COURSES_DB` | Path to the institution's course SQLite database |
+| `PROVIDERS` | Dict of provider name → location/note |
+| `SSA_MAP` | Subject tile labels → `ssa_label` values in the courses table |
+| `QUAL_FILTER_MAP` | Qual tile labels → `qual_type` values in the courses table |
+| `SUBJECT_AREAS` | List of `(ssa_label, description)` tuples for prompts |
+
+`api.py` imports all of these at startup — no institution-specific strings are hardcoded in `api.py`.
 
 ---
 

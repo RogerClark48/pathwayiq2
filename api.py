@@ -16,13 +16,18 @@ load_dotenv()
 print(f"[startup] VOYAGE_API_KEY present: {bool(os.environ.get('VOYAGE_API_KEY'))}", flush=True)
 print(f"[startup] All env vars: {[k for k in os.environ.keys()]}", flush=True)
 
+from institution_config import (
+    INSTITUTION_NAME, INSTITUTION_FULL_NAME, INSTITUTION_REGION,
+    COURSES_DB as GMIOT_DB,
+    PROVIDERS, SSA_MAP, QUAL_FILTER_MAP, SUBJECT_AREAS,
+)
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 _BASE              = os.path.dirname(os.path.abspath(__file__))
 CHROMA_PATH        = os.path.join(_BASE, "chroma_store")
 COURSES_DB         = os.path.join(_BASE, "emiot.sqlite")   # v1 only — dead in v2, do not use
-GMIOT_DB           = os.path.join(_BASE, "gmiot.sqlite")
 JOBS_DB            = os.path.join(_BASE, "job_roles_asset.db")
 CONNECTIONS_DB     = os.path.join(_BASE, "connections.db")
 ANALYTICS_DB       = os.path.join(_BASE, "analytics.db")
@@ -53,27 +58,7 @@ PROGRESSION_SYSTEM_PROMPT = (
     "Do not use markdown code blocks, backticks, or any text outside the JSON object itself."
 )
 
-# Maps subject tile labels to exact ssa_label values in gmiot_courses
-SSA_MAP = {
-    'Engineering':   'Engineering and Manufacturing Technologies',
-    'Digital & Tech':'Information and Communication Technology',
-    'Construction':  'Construction, Planning and the Built Environment',
-    'Health':        'Health, Public Services and Care',
-    'Arts & Media':  'Arts, Media and Publishing',
-}
-
-# Maps qual tile filter labels to the qual_type values they cover in gmiot_courses
-QUAL_FILTER_MAP = {
-    'T Level':          ['T Level'],
-    'Apprenticeship':   ['Apprenticeship'],
-    'HNC':              ['HNC', 'HNC/HTQ', 'HTQ', 'HNC/HND'],
-    'HND':              ['HND', 'HND/HTQ', 'HNC/HND'],
-    'Foundation Degree':['FdA', 'FdSc', 'CertHE', 'DipHE'],
-    "Bachelor's Degree":['BA Hons', 'BEng Hons', 'BSc Hons'],
-    "Master's Degree":  ['MSc'],
-    'Access to HE':     ['Access to HE'],
-    'Short Course':     ['Award', 'Short Course'],
-}
+# SSA_MAP and QUAL_FILTER_MAP imported from institution_config
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -764,9 +749,16 @@ _CHAT_TOOL = {
 }
 
 
+_providers_text = "\n".join(
+    f"{name} — {location}" for name, location in PROVIDERS.items()
+)
+_subjects_text = "\n".join(
+    f"{label} — {desc}" for label, desc in SUBJECT_AREAS
+)
+
 _EXPLAIN_SYSTEM = (
-    "You are a course and career guidance advisor for GMIoT — Greater Manchester's "
-    "Institute of Technology. A student has asked a question about qualifications, "
+    f"You are a course and career guidance advisor for {INSTITUTION_FULL_NAME}. "
+    "A student has asked a question about qualifications, "
     "career pathways, or how the education system works.\n\n"
     "Answer clearly and warmly in 2–4 sentences. If it is natural to do so, end with "
     "a short suggestion of what the user could explore next — but do not force it.\n\n"
@@ -800,24 +792,11 @@ _EXPLAIN_SYSTEM = (
     "Master's Degree (MSc) — Level 7; typically 1 year full-time postgraduate study.\n"
     "Short Course / Award — Short professional or skills-based courses, no fixed level.\n\n"
 
-    "PARTNER PROVIDERS (all in Greater Manchester):\n"
-    "Wigan & Leigh College — Wigan\n"
-    "University of Salford — Salford\n"
-    "Trafford & Stockport College — campuses in Stretford and Stockport\n"
-    "Tameside College — Ashton-under-Lyne\n"
-    "Bury College — Bury\n"
-    "Ada College — Manchester city centre; specialises in digital and technology\n\n"
+    f"PARTNER PROVIDERS (all in {INSTITUTION_REGION}):\n"
+    f"{_providers_text}\n\n"
 
     "SUBJECT AREAS COVERED:\n"
-    "Engineering and Manufacturing Technologies — mechanical, electrical, "
-    "manufacturing, automotive\n"
-    "Information and Communication Technology — software development, networking, "
-    "cybersecurity, data\n"
-    "Construction, Planning and the Built Environment — building, civil engineering, "
-    "architecture, surveying\n"
-    "Health, Public Services and Care — nursing, healthcare, social care\n"
-    "Arts, Media and Publishing — creative arts, graphic design, media production\n"
-    "Business, Administration and Law — business management, finance, administration\n\n"
+    f"{_subjects_text}\n\n"
 
     "JOB DATA SOURCES:\n"
     "NCS — National Careers Service; UK government careers information\n"
@@ -956,13 +935,8 @@ _SPECIFY_SEARCHES_SYSTEM = (
     "same intent. Each search can target courses, jobs, or both.\n\n"
     "If a candidate set is active, decide whether to search within it\n"
     "(refine) or the full collection (new search).\n\n"
-    "The app has these subject areas: Engineering and Manufacturing\n"
-    "Technologies, Information and Communication Technology, Construction\n"
-    "Planning and the Built Environment, Health Public Services and Care,\n"
-    "Arts Media and Publishing, Business Administration and Law.\n\n"
-    "Available providers: Wigan & Leigh College, University of Salford,\n"
-    "Trafford & Stockport College, Tameside College, Bury College,\n"
-    "Ada College.\n\n"
+    f"The app has these subject areas: {', '.join(label for label, _ in SUBJECT_AREAS)}.\n\n"
+    f"Available providers: {', '.join(PROVIDERS.keys())}.\n\n"
     "For explain queries, set searches to [] and collection_action to none."
 )
 

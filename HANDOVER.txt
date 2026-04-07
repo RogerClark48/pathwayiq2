@@ -292,29 +292,29 @@ KNOWN ISSUES AND GOTCHAS
   are valid rows — handle gracefully, do not filter them out.
 
 
-DEPLOYING FOR A DIFFERENT COURSE DATASET
------------------------------------------
-Several prompts in api.py are specific to GMIoT and will need updating if the app
-is deployed with a different institution's course data.
+DEPLOYING FOR A DIFFERENT INSTITUTION
+--------------------------------------
+All institution-specific configuration is isolated in institution_config.py.
+To deploy PathwayIQ for a different institution, only that file needs to change —
+no grepping through api.py for hardcoded names or paths.
 
-_SPECIFY_SEARCHES_SYSTEM (line ~855)
-  Lists the five GMIoT subject areas and six partner providers by name. Update both
-  lists to match the new dataset's subject taxonomy and providers.
+institution_config.py contains:
+  INSTITUTION_NAME        Short name (e.g. "GMIoT")
+  INSTITUTION_FULL_NAME   Full name used in prompts
+  INSTITUTION_REGION      Region used in provider list heading
+  COURSES_DB              Path to the institution's course SQLite database
+  PROVIDERS               Dict of provider name → location/note
+  SSA_MAP                 Subject tile labels → ssa_label values in courses table
+  QUAL_FILTER_MAP         Qual tile labels → qual_type values in courses table
+  SUBJECT_AREAS           List of (ssa_label, description) tuples for prompts
 
-_EXPLAIN_SYSTEM (line ~759)
-  Contains GMIoT-specific content throughout:
-  - PARTNER PROVIDERS section: names and locations are GMIoT-specific — replace entirely
-  - SUBJECT AREAS COVERED: matches GMIoT's SSA classification — update to match new data
-  - QUALIFICATION TYPES: largely generic UK qualifications, but review for relevance
-  - The opening sentence names GMIoT explicitly — update the institution name
+api.py imports all of these at startup. The prompts (_EXPLAIN_SYSTEM and
+_SPECIFY_SEARCHES_SYSTEM) build their institution-specific sections from these
+values at module load time.
 
-SSA_MAP and QUAL_FILTER_MAP (lines ~49–68)
-  These are code constants, not prompts, but they drive the subject tile and
-  qualification tile navigation. If the new dataset uses a different subject
-  taxonomy or qualification set, both maps need updating alongside the frontend tiles.
-
-The job data (NCS/Prospects) and RQF level reference are generic and should not
-need changing unless the job dataset is also replaced.
+The job data (NCS/Prospects), RQF level reference, and qualification type
+descriptions are generic UK content and should not need changing unless the
+job dataset is also replaced.
 
 
 WHAT IS NOT YET BUILT (V2 ROADMAP)
