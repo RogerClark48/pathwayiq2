@@ -2754,6 +2754,22 @@ def _init_analytics_db():
 
 _init_analytics_db()
 
+# Seed a permanent access code from environment if set
+_seed_code = os.environ.get("SEED_ACCESS_CODE", "").strip()
+if _seed_code:
+    try:
+        _seed_conn = sqlite3.connect(ANALYTICS_DB)
+        _seed_conn.execute(
+            "INSERT OR IGNORE INTO access_codes (code, label, expires_at, created_at, used_count) "
+            "VALUES (?, 'Seed code', NULL, ?, 0)",
+            (_seed_code, datetime.utcnow().isoformat())
+        )
+        _seed_conn.commit()
+        _seed_conn.close()
+        print(f"[startup] Seed access code ensured: {_seed_code}", flush=True)
+    except Exception as e:
+        print(f"[startup] Seed access code failed: {e}", flush=True)
+
 
 @app.post("/analytics")
 def log_analytics():
