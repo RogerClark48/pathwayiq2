@@ -30,6 +30,7 @@ body {
   max-width: 480px;
   margin: 0 auto;
   position: relative;
+  overscroll-behavior-y: contain;
 }
 
 #header {
@@ -748,6 +749,21 @@ body {
   transition: background 0.1s;
 }
 .saved-row:hover { background: #F3F4F6; }
+
+.saved-remove-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #dc2626;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.saved-remove-btn:hover { background: #fee2e2; }
 
 .saved-row-title {
   font-size: 14px;

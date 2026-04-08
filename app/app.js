@@ -60,6 +60,35 @@ const chatHistory        = [];  // { role: "user"|"assistant", content: string }
 const browsingHistory    = [];  // { type: "course"|"career", title: string, id: string }
 let   candidateSet       = null; // { course_ids, job_ids, built_from } — active search set
 
+// ─── Saved items persistence ──────────────────────────────────────────────────
+const LS_KEY = 'pathwayiq_saved_courses';
+
+function lsAvailable() {
+  try { localStorage.setItem('_t', '1'); localStorage.removeItem('_t'); return true; }
+  catch (_) { return false; }
+}
+
+function persistSaved() {
+  if (!CONFIG.SAVE_TO_LOCALSTORAGE || !lsAvailable()) return;
+  const data = savedItems.map(({ id, type, title }) => ({ id, type, title }));
+  try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch (_) {}
+}
+
+function loadSaved() {
+  if (!CONFIG.SAVE_TO_LOCALSTORAGE || !lsAvailable()) return;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) return;
+    data.forEach(({ id, type, title }) => {
+      if (id && type && title && !savedItems.some(s => s.id === id && s.type === type)) {
+        savedItems.push({ id, type, title, cardElement: null });
+      }
+    });
+  } catch (_) {}
+}
+
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const subjectGrid  = document.getElementById('subject-grid');
 const qualGrid     = document.getElementById('qual-grid');
@@ -177,6 +206,8 @@ function isPinned(id, type) {
 function makePinBtn(id, type, title, cardEl) {
   const btn = document.createElement('button');
   btn.className = 'action-btn pin-btn';
+  btn.dataset.id   = id;
+  btn.dataset.type = type;
 
   // Reflect current saved state at creation time
   if (isPinned(id, type)) {
@@ -198,6 +229,7 @@ function makePinBtn(id, type, title, cardEl) {
       btn.textContent = '📌 Saved';
       btn.classList.add('pin-btn--saved');
     }
+    persistSaved();
   });
 
   return btn;
@@ -226,6 +258,44 @@ function buildSavedCard() {
     .filter(i => i.type === 'course')
     .map(i => i.id);
 
+  // Map — only shown when there are saved courses
+  let mapInstance = null;
+  let courseMarkers = [];  // { lat, lng, marker } — campus markers only
+  let userMarker = null;
+
+  async function refreshMap(courseIds) {
+    if (!mapInstance) return;
+    // Remove existing campus markers
+    courseMarkers.forEach(({ marker }) => mapInstance.removeLayer(marker));
+    courseMarkers = [];
+
+    try {
+      const resp = await fetch(API_BASE + '/saved/campuses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ course_ids: courseIds }),
+      });
+      const campuses = await resp.json();
+      campuses.forEach(campus => {
+        const courseList = campus.courses.map(t => `<li>${t}</li>`).join('');
+        const popup = `<strong>${campus.provider}</strong><br>${campus.campus_name} · ${campus.postcode}<ul style="margin:6px 0 0;padding-left:16px;">${courseList}</ul>`;
+        const marker = L.marker([campus.lat, campus.lng])
+          .addTo(mapInstance)
+          .bindPopup(popup);
+        courseMarkers.push({ lat: campus.lat, lng: campus.lng, marker });
+      });
+    } catch (err) {
+      console.error('Could not load campus data', err);
+    }
+
+    // Fit bounds to all markers including user location
+    const allMarkers = courseMarkers.map(m => m.marker);
+    if (userMarker) allMarkers.push(userMarker);
+    if (allMarkers.length > 0) {
+      mapInstance.fitBounds(L.featureGroup(allMarkers).getBounds().pad(0.15));
+    }
+  }
+
   if (savedCourseIds.length > 0) {
     const mapWrap = document.createElement('div');
     mapWrap.className = 'saved-map-wrap';
@@ -234,60 +304,25 @@ function buildSavedCard() {
     mapWrap.appendChild(mapEl);
     card.appendChild(mapWrap);
 
-    // Initialise map after element is in DOM
     setTimeout(async () => {
-      const map = L.map(mapEl, { zoomControl: true });
+      mapInstance = L.map(mapEl, { zoomControl: true });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 18,
-      }).addTo(map);
+      }).addTo(mapInstance);
 
-      const markers = [];
+      await refreshMap(savedCourseIds);
 
-      try {
-        const resp = await fetch(API_BASE + '/saved/campuses', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ course_ids: savedCourseIds }),
-        });
-        const campuses = await resp.json();
-
-        campuses.forEach(campus => {
-          const courseList = campus.courses.map(t => `<li>${t}</li>`).join('');
-          const popup = `<strong>${campus.provider}</strong><br>${campus.campus_name} · ${campus.postcode}<ul style="margin:6px 0 0;padding-left:16px;">${courseList}</ul>`;
-          const marker = L.marker([campus.lat, campus.lng])
-            .addTo(map)
-            .bindPopup(popup);
-          markers.push(marker);
-        });
-      } catch (err) {
-        console.error('Could not load campus data', err);
-      }
-
-      // User location
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(pos => {
-          const userLatLng = [pos.coords.latitude, pos.coords.longitude];
-          const userMarker = L.circleMarker(userLatLng, {
+          userMarker = L.circleMarker([pos.coords.latitude, pos.coords.longitude], {
             radius: 8, color: '#0d9488', fillColor: '#0d9488', fillOpacity: 0.9, weight: 2,
-          }).addTo(map).bindPopup('Your location');
-          markers.push(userMarker);
-          if (markers.length > 0) {
-            const group = L.featureGroup(markers);
-            map.fitBounds(group.getBounds().pad(0.15));
+          }).addTo(mapInstance).bindPopup('Your location');
+          const allMarkers = courseMarkers.map(m => m.marker).concat([userMarker]);
+          if (allMarkers.length > 0) {
+            mapInstance.fitBounds(L.featureGroup(allMarkers).getBounds().pad(0.15));
           }
-        }, () => {
-          // Permission denied — fit to campus markers only
-          if (markers.length > 0) {
-            const group = L.featureGroup(markers);
-            map.fitBounds(group.getBounds().pad(0.15));
-          }
-        });
-      } else {
-        if (markers.length > 0) {
-          const group = L.featureGroup(markers);
-          map.fitBounds(group.getBounds().pad(0.15));
-        }
+        }, () => {});
       }
     }, 0);
   }
@@ -295,7 +330,7 @@ function buildSavedCard() {
   const list = document.createElement('div');
   list.className = 'saved-list';
 
-  savedItems.forEach(item => {
+  function buildSavedRow(item) {
     const row = document.createElement('div');
     row.className = 'saved-row';
 
@@ -307,7 +342,41 @@ function buildSavedCard() {
     titleSpan.className = 'saved-row-title';
     titleSpan.append(iconSvg(item.type), document.createTextNode(item.title));
 
-    row.append(typePill, titleSpan);
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'saved-remove-btn';
+    removeBtn.textContent = '✕';
+    removeBtn.title = 'Remove';
+    removeBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const idx = savedItems.findIndex(s => s.id === item.id && s.type === item.type);
+      if (idx !== -1) savedItems.splice(idx, 1);
+      persistSaved();
+      row.remove();
+
+      // Update pin buttons in the thread
+      document.querySelectorAll(`.pin-btn[data-id="${item.id}"][data-type="${item.type}"]`).forEach(btn => {
+        btn.textContent = '📌 Save';
+        btn.classList.remove('pin-btn--saved');
+      });
+
+      // Refresh map or show empty state
+      if (savedItems.length === 0) {
+        list.innerHTML = '';
+        const empty = document.createElement('p');
+        empty.className = 'loading-text';
+        empty.textContent = 'No saved items.';
+        list.appendChild(empty);
+        if (mapInstance) {
+          courseMarkers.forEach(({ marker }) => mapInstance.removeLayer(marker));
+          courseMarkers = [];
+        }
+      } else if (item.type === 'course') {
+        const remainingCourseIds = savedItems.filter(s => s.type === 'course').map(s => s.id);
+        refreshMap(remainingCourseIds);
+      }
+    });
+
+    row.append(typePill, titleSpan, removeBtn);
 
     row.addEventListener('click', async () => {
       try {
@@ -325,8 +394,10 @@ function buildSavedCard() {
       }
     });
 
-    list.appendChild(row);
-  });
+    return row;
+  }
+
+  savedItems.forEach(item => list.appendChild(buildSavedRow(item)));
 
   card.appendChild(list);
   return card;
@@ -1391,7 +1462,24 @@ function renderStartScreen() {
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
+loadSaved();
 renderStartScreen();
+
+// On-load reminder for returning users
+if (CONFIG.SAVE_TO_LOCALSTORAGE && CONFIG.SHOW_RETURN_REMINDER && savedItems.length > 0) {
+  const n = savedItems.length;
+  const label = n === 1 ? '1 saved course' : `${n} saved courses`;
+  const card = document.createElement('div');
+  card.className = 'card card--advisory';
+  const header = document.createElement('p');
+  header.className = 'advisory-header';
+  header.textContent = '✶ WELCOME BACK';
+  const msg = document.createElement('p');
+  msg.className = 'advisory-explanation';
+  msg.textContent = `You have ${label} from your last visit. Tap the saved items icon to see them.`;
+  card.append(header, msg);
+  thread.appendChild(card);
+}
 
 // ─── Pathway modal ────────────────────────────────────────────────────────────
 
