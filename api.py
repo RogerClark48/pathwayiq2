@@ -27,7 +27,6 @@ from institution_config import (
 # ---------------------------------------------------------------------------
 _BASE              = os.path.dirname(os.path.abspath(__file__))
 CHROMA_PATH        = os.path.join(_BASE, "chroma_store")
-COURSES_DB         = os.path.join(_BASE, "emiot.sqlite")   # v1 only — dead in v2, do not use
 JOBS_DB            = os.path.join(_BASE, "job_roles_asset.db")
 CONNECTIONS_DB     = os.path.join(_BASE, "connections.db")
 ANALYTICS_DB       = os.path.join(_BASE, "analytics.db")
@@ -186,16 +185,6 @@ def salary_string(low, high, currency="GBP") -> str | None:
     return f"{symbol}{int(low):,} – {symbol}{int(high):,}"
 
 
-def course_row(course_id: str) -> dict | None:
-    conn = sqlite3.connect(COURSES_DB)
-    conn.row_factory = sqlite3.Row
-    row = conn.execute(
-        "SELECT * FROM Course WHERE courseId = ?", (course_id,)
-    ).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
 def gmiot_course_row(course_id: str) -> dict | None:
     conn = sqlite3.connect(GMIOT_DB)
     conn.row_factory = sqlite3.Row
@@ -310,167 +299,6 @@ def format_job(meta: dict, db: dict | None, match_score: int) -> dict:
     if db:
         result["overview"] = (db.get("summary") or db.get("description") or "")[:400]
     return result
-
-
-LEVEL_REF = """Qualification level reference:
-T Level               -> Level 3
-Higher Apprenticeship -> Level 4-5
-HNC                   -> Level 4
-HND                   -> Level 5
-Bachelor's Degree     -> Level 6
-Master's Degree       -> Level 7"""
-
-OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
-GATEKEEP_MODEL  = "llama3.2:3b"
-
-
-def _parse_llm_json(content: str) -> dict:
-    """Strip optional markdown fences and parse JSON."""
-    content = content.strip()
-    if content.startswith("```"):
-        content = content.split("```")[1]
-        if content.startswith("json"):
-            content = content[4:]
-        content = content.strip()
-    return json.loads(content)
-
-
-def gatekeep_jobs(course_name, course_level, course_subject,
-                  qualification_type, candidates):
-    """Filter job candidates by subject/level relevance against a course.
-
-    candidates: list of dicts with keys job_id, title, full_text, score
-    Returns: (approved_ids, rejected_ids, acknowledgement)
-    """
-    lines = []
-    for c in candidates:
-        lines.append(
-            f"JOB_ID={c['job_id']} | {c['title']} ({c['score']}%)\n"
-            f"{c['full_text'][:600]}"
-        )
-
-    system_prompt = (
-        "You are a careers advisor assistant. Review candidate career matches "
-        "for a course and filter out any that are inappropriate by subject domain "
-        "or qualification level.\n\n"
-        "Respond with valid JSON only. No preamble, no explanation outside the JSON, "
-        "no markdown fences. Return exactly:\n"
-        '{"approved_ids": ["971", "846"], "rejected_ids": ["203"], '
-        '"acknowledgement": "One sentence for the user."}\n\n'
-        "Rules:\n"
-        "- approved_ids and rejected_ids must contain the exact JOB_ID numbers "
-        "from the candidates — do not return sequence numbers or any other value\n"
-        "- approved_ids: job IDs genuinely relevant to the course subject AND "
-        "appropriate entry level for the qualification\n"
-        "- rejected_ids: job IDs in a different subject domain OR clearly mismatched level\n"
-        "- acknowledgement: one short sentence the user will read — do not mention "
-        "filtering or rejection, just frame results positively\n"
-        "- When in doubt, approve — only reject clear mismatches\n"
-        "- Never invent facts about courses or careers"
-    )
-
-    user_prompt = (
-        f"Course: {course_name}\n"
-        f"Qualification: {qualification_type} (Level {course_level})\n"
-        f"Subject area: {course_subject}\n\n"
-        f"{LEVEL_REF}\n\n"
-        f"Candidate career matches to review:\n\n"
-        + "\n\n---\n\n".join(lines)
-        + "\n\nReturn JSON only."
-    )
-
-    try:
-        resp = httpx.post(
-            OLLAMA_CHAT_URL,
-            json={
-                "model": GATEKEEP_MODEL,
-                "stream": False,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user",   "content": user_prompt},
-                ],
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        parsed = _parse_llm_json(resp.json()["message"]["content"])
-        approved = [str(x) for x in parsed.get("approved_ids", [])]
-        rejected = [str(x) for x in parsed.get("rejected_ids", [])]
-        ack      = parsed.get("acknowledgement", "")
-        print(f"[gatekeep_jobs] approved={approved} rejected={rejected}", flush=True)
-        return approved, rejected, ack
-    except Exception as e:
-        print(f"[gatekeep_jobs] LLM failed ({e}) — approving all", flush=True)
-        return [str(c["job_id"]) for c in candidates], [], ""
-
-
-def gatekeep_courses(job_title, job_skills_text, candidates):
-    """Filter course candidates by subject/level relevance against a job.
-
-    candidates: list of dicts with keys course_id, title, level,
-                qualification_type, ssa_category, overview, score
-    Returns: (approved_ids, rejected_ids, acknowledgement)
-    """
-    lines = []
-    for c in candidates:
-        lines.append(
-            f"COURSE_ID={c['course_id']} | {c['title']} — "
-            f"{c['qualification_type']} Level {c['level']} ({c['score']}%)\n"
-            f"{c['overview'][:400]}"
-        )
-
-    system_prompt = (
-        "You are a careers advisor assistant. Review candidate course matches "
-        "for a job and filter out any that are inappropriate by subject domain "
-        "or qualification level.\n\n"
-        "Respond with valid JSON only. No preamble, no explanation outside the JSON, "
-        "no markdown fences. Return exactly:\n"
-        '{"approved_ids": ["14", "3"], "rejected_ids": ["7"], '
-        '"acknowledgement": "One sentence for the user."}\n\n'
-        "Rules:\n"
-        "- approved_ids and rejected_ids must contain the exact COURSE_ID numbers "
-        "from the candidates — do not return sequence numbers or any other value\n"
-        "- approved_ids: course IDs genuinely relevant to the job subject AND "
-        "appropriate qualification level for the job's entry requirements\n"
-        "- rejected_ids: course IDs in a different subject domain OR clearly mismatched level\n"
-        "- acknowledgement: one short sentence the user will read — do not mention "
-        "filtering or rejection, just frame results positively\n"
-        "- When in doubt, approve — only reject clear mismatches\n"
-        "- Never invent facts about courses or careers"
-    )
-
-    user_prompt = (
-        f"Job role: {job_title}\n"
-        f"Job entry requirements and skills:\n{job_skills_text[:600]}\n\n"
-        f"{LEVEL_REF}\n\n"
-        f"Candidate courses to review:\n\n"
-        + "\n\n---\n\n".join(lines)
-        + "\n\nReturn JSON only."
-    )
-
-    try:
-        resp = httpx.post(
-            OLLAMA_CHAT_URL,
-            json={
-                "model": GATEKEEP_MODEL,
-                "stream": False,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user",   "content": user_prompt},
-                ],
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        parsed = _parse_llm_json(resp.json()["message"]["content"])
-        approved = [str(x) for x in parsed.get("approved_ids", [])]
-        rejected = [str(x) for x in parsed.get("rejected_ids", [])]
-        ack      = parsed.get("acknowledgement", "")
-        print(f"[gatekeep_courses] approved={approved} rejected={rejected}", flush=True)
-        return approved, rejected, ack
-    except Exception as e:
-        print(f"[gatekeep_courses] LLM failed ({e}) — approving all", flush=True)
-        return [str(c["course_id"]) for c in candidates], [], ""
 
 
 def merge_candidates(list_a: list, list_b: list) -> list:
@@ -2702,7 +2530,7 @@ def chat():
         meta = course_meta_by_id.get(cid)
         if not meta:
             continue
-        db = course_row(cid)
+        db = gmiot_course_row(cid)
         results.append(format_course(meta, db, course_score_by_id[cid]))
 
     if not results:

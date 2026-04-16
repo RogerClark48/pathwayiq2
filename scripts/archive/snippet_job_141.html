@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Civil engineering technician — career paths</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css">
+  <style>
+    body { font-family: sans-serif; margin:0; background:#f5f5f5; }
+    h1 { font-size:1.1rem; padding:12px 20px 4px; margin:0; color:#333; }
+    #meta { padding:2px 20px 4px; font-size:0.85rem; color:#555; }
+    #legend { padding:2px 20px 6px; font-size:0.8rem; color:#555; }
+    #note { padding:0 20px 6px; font-size:0.75rem; color:#888; }
+    #network { width:100%; height:calc(100vh - 110px); border-top:1px solid #ddd; background:#fff; }
+  </style>
+</head>
+<body>
+  <h1>Civil engineering technician — career paths</h1>
+  <div id="meta">Cluster D2 &nbsp;|&nbsp; Tier 2: Mid-entry &nbsp;|&nbsp; Job ID: 141</div>
+  <div id="legend"><span style="display:inline-flex;align-items:center;margin-right:12px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#4caf50;margin-right:4px"></span>Entry</span><span style="display:inline-flex;align-items:center;margin-right:12px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#8bc34a;margin-right:4px"></span>Mid-entry</span><span style="display:inline-flex;align-items:center;margin-right:12px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2196f3;margin-right:4px"></span>Mid</span><span style="display:inline-flex;align-items:center;margin-right:12px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#1565c0;margin-right:4px"></span>Senior</span><span style="display:inline-flex;align-items:center;margin-right:12px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#9c27b0;margin-right:4px"></span>Principal</span><span style="display:inline-flex;align-items:center;margin-right:12px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e65100;margin-right:4px"></span>Consulting/contracting</span></div>
+  <div id="note">White node = current job &nbsp; Solid arrow = upward &nbsp; Dashed = lateral</div>
+  <div id="network"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js"></script>
+  <script>
+    const nodes = new vis.DataSet([
+  {id:141, label:"Civil engineering technician", color:{background:"white", border:"#333"}, size:22, title:"<b>Civil engineering technician</b><br>Tier 2: Mid-entry<br>ID: 141"},
+  {id:140, label:"Civil engineer", color:{background:"#2196f3", border:"#2196f3"}, size:18, title:"<b>Civil engineer</b><br>Tier 3: Mid<br>ID: 140"},
+  {id:1178, label:"Site engineer", color:{background:"#1565c0", border:"#1565c0"}, size:18, title:"<b>Site engineer</b><br>Tier 4: Senior<br>ID: 1178"}
+    ]);
+    const edges = new vis.DataSet([
+  {id:0, from:141, to:140, arrows:"to", dashes:false, title:"upward"},
+  {id:1, from:141, to:1178, arrows:"to", dashes:false, title:"upward"}
+    ]);
+    const container = document.getElementById("network");
+    const options = {
+      layout: { hierarchical: { enabled:true, direction:"UD", sortMethod:"directed", levelSeparation:120, nodeSpacing:180 } },
+      nodes: { shape:"dot", font:{ size:13, face:"sans-serif" }, borderWidth:2 },
+      edges: { font:{ size:11, align:"middle" }, smooth:{ type:"cubicBezier", forceDirection:"vertical" }, color:{ color:"#888", highlight:"#333" } },
+      physics: { enabled:false },
+      interaction: { hover:true, tooltipDelay:100 }
+    };
+    new vis.Network(container, { nodes, edges }, options);
+  </script>
+</body>
+</html>

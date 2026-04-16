@@ -29,7 +29,7 @@ load_dotenv()
 # Config
 # ---------------------------------------------------------------------------
 import os
-_BASE       = os.path.dirname(os.path.abspath(__file__))
+_BASE       = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 CHROMA_PATH = os.path.join(_BASE, "chroma_store")
 GMIOT_DB    = os.path.join(_BASE, "gmiot.sqlite")
 JOBS_DB     = os.path.join(_BASE, "job_roles_asset.db")

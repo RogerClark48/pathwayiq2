@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE_DIR    = Path(__file__).parent
+BASE_DIR    = Path(__file__).parent.parent
 GMIOT_DB    = BASE_DIR / "gmiot.sqlite"
 JOBS_DB     = BASE_DIR / "job_roles_asset.db"
 CHROMA_PATH = str(BASE_DIR / "chroma_store")
