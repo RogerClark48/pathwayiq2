@@ -1,12 +1,15 @@
-# PathwayIQ — Claude Code Project Context
+# FutureFinder v3 — Claude Code Project Context
+
+**Branch:** `futurefinder-v3` on GitHub (`RogerClark48/pathwayiq2`)
+**Railway:** connect to `futurefinder-v3` branch (manual setup required)
 
 ## What this project is
 
-PathwayIQ is a career guidance tool built for **Scott Clark Consultants**. The first deployment is the **GM IoT Course and Career Explorer**: a web application that connects GM IoT course data with job market data (NCS and Prospects), helping prospective students understand the career pathways their courses lead to, and discover courses from a career starting point.
+FutureFinder (formerly PathwayIQ) is a career guidance tool built for **Scott Clark Consultants**. The first deployment is the **GM IoT Course and Career Explorer**: a web application that connects GM IoT course data with job market data (NCS and Prospects), helping prospective students understand the career pathways their courses lead to, and discover courses from a career starting point.
 
 The app serves **GMIoT (Greater Manchester IoT)** course data (83 courses) alongside NCS and Prospects job data (1,252 records).
 
-This is **v2**. V1 is preserved at `C:\Dev\pathwayiq`. V2 adds a structured qualification level layer and Skills England occupational progression data to ground course-career connections in real pathways, not just semantic similarity.
+This is **v3** — a clean continuation of v2. V1 (`C:\Dev\pathwayiq`) has been deleted. The cluster-based career network approach was retired; the LLM-driven connection and progression approach is the foundation going forward.
 
 ---
 
@@ -199,21 +202,6 @@ Compound PK on `(std_code_from, std_code_to)` — no duplicates.
 - `embed_field_specific.py` — creates field-specific Chroma collections. Uses `os.path` with `__file__` to resolve paths relative to the script location — run from any directory, paths resolve correctly to project root.
 - *(archived)* `pull_se_typical_titles.py`, `embed_se_occupations.py`, `embed_job_titles.py`, `tag_stdcodes.py` — moved to `scripts/archive/`; stdCode tagging approach retired
 
-### `job_progression_cache` (`job_roles_asset.db`)
-
-Demand-driven cache of Sonnet-generated progression results. One row per job. Populated on first user request per job — cache builds naturally through usage.
-
-| Column | Type | Notes |
-|---|---|---|
-| `job_id` | INTEGER PK | FK to `jobs.id` |
-| `narrative` | TEXT | 2–3 sentence plain-English guidance from Sonnet |
-| `inbound_json` | TEXT | JSON array of `{"id": N, "title": "..."}` — roles that lead to this one |
-| `outbound_json` | TEXT | JSON array of `{"id": N, "title": "..."}` — roles this leads to |
-| `prompt_version` | INTEGER | 4 — increment when prompt changes to invalidate cache |
-| `created_at` | TEXT | ISO timestamp |
-
-Served by `GET /jobs/<id>/progression` in api.py. Candidates sourced from Chroma cross-collection search (top 30 nearest jobs). `prompt_version = 4` filter means old cache rows survive prompt changes without deletion — they just don't match the filter.
-
 ### `connections.db` — pre-computed course→job connections (v2)
 
 | Column | Type | Notes |
@@ -273,13 +261,18 @@ Full spec: `PathwayIQ_Interface_Design_Spec_v2.docx`
 | 6 | Session overview + save/pin |
 | 7 | GMIoT data swap — gmiot.sqlite, named fields, Voyage AI, new Chroma collections |
 
-### V2 — in progress
+### V2 — complete (archived as restore point, commit 1e9f17f)
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Qualification pathway map — modal overlay from qual grid trigger link | Complete |
 | 1 | Skills England data layer — pull routes, occupations, progressions into `se_data.db` | Complete |
 | 1b | Pre-computed connections table — course→job pairs with Haiku gatekeeping, served from connections.db | Complete |
-| 1c | Progression card — demand-driven Sonnet generation, permanent cache in `job_progression_cache` | Complete |
+| 1c | Progression card — demand-driven Sonnet generation, cached in job_progression_cache | Complete (table dropped in v3 cleanup) |
+
+### V3 — in progress (branch: futurefinder-v3)
+| Phase | Scope | Status |
+|---|---|---|
+| cleanup | Archive cluster work, drop retired tables, remove dead code | Complete |
 | 2 | Improved card relevance — filter by occupation level and route | Not started |
 | 3 | Progression advisory mode — Sonnet generates pathway narrative using SE data | Not started |
 | 4 | Desktop/tablet progression map — visual network on wider screens | Not started |
@@ -325,11 +318,11 @@ CONNECTIONS_DB = r"C:\Dev\pathwayiq2\connections.db"
 # GMIOT_DB imported from institution_config.COURSES_DB
 ```
 
-`COURSES_DB` in api.py remains pointing to v1 `emiot.sqlite` — it is dead code in v2. The `course_row()` function that used it is unused; all course queries use `GMIOT_DB`. Do not remove `COURSES_DB` without also removing `course_row()`.
+All course queries use `GMIOT_DB` via `gmiot_course_row()`. `COURSES_DB` and `course_row()` (v1 dead code) were removed in the v3 cleanup.
 
 ## institution_config.py — deploying for a different institution
 
-All institution-specific values are isolated in `institution_config.py`. To deploy PathwayIQ for a different institution, only this file needs to change:
+All institution-specific values are isolated in `institution_config.py`. To deploy FutureFinder for a different institution, only this file needs to change:
 
 | Setting | Description |
 |---|---|

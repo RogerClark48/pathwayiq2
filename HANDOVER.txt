@@ -1,8 +1,10 @@
-PathwayIQ v2 — Developer Handover
-===================================
-Last updated: 2026-04-04
+FutureFinder v3 — Developer Handover
+======================================
+Last updated: 2026-04-16
 Client: Scott Clark Consultants
 Deployment: GMIoT (Greater Manchester IoT) Course and Career Explorer
+Branch: futurefinder-v3 (on GitHub: RogerClark48/pathwayiq2)
+Railway: to be configured — connect to futurefinder-v3 branch (manual step)
 
 
 WHAT THE APP DOES
@@ -41,7 +43,6 @@ app/app.js              All frontend JS — card rendering, chat, navigation
 
 gmiot.sqlite            83 GMIoT courses (table: gmiot_courses, PK: course_id)
 job_roles_asset.db      1,252 NCS/Prospects job roles (table: jobs, PK: id)
-                          also contains: job_progression_cache table (see below)
 connections.db          Pre-computed course→job connections (1,349 pairs)
 se_data.db              Skills England apprenticeship standards and progressions
 chroma_store/           Chroma vector store — four collections (see below)
@@ -72,14 +73,6 @@ job_roles_asset.db — table: jobs
   - career_prospects: full career progression section scraped from source pages — used as
     primary authoritative input to Sonnet progression card generation. Falls back to the
     condensed `progression` field if absent. Populated by scripts/scrape_career_prospects.py
-
-job_roles_asset.db — table: job_progression_cache
-  job_id (PK), narrative, inbound_json, outbound_json, prompt_version, created_at
-  - Demand-driven cache: populated on first user request per job, then served from cache
-  - narrative: 2–3 sentence plain-English career progression guidance (Sonnet-generated)
-  - inbound_json / outbound_json: JSON arrays of {id, title} for related roles
-  - prompt_version=4: old rows without this version are ignored (allows prompt changes
-    without deleting the table)
 
 connections.db — table: connections
   course_id, job_id, semantic_score (int), skills_score (int), created_at
@@ -275,16 +268,6 @@ KNOWN ISSUES AND GOTCHAS
 - Chroma lock files: stale HNSW locks on Windows cause 500 errors. Reboot Windows
   if you see "Nothing found on disk" errors from Chroma — do not try to fix in code.
 
-- gatekeep_jobs / gatekeep_courses functions in api.py still reference an Ollama
-  endpoint (http://localhost:11434) that is no longer in use. These functions are
-  called by the pipeline scripts (scripts/build_connections.py), not by the live
-  server. They are not on any server request path. Do not remove without checking
-  build_connections.py.
-
-- course_row() and COURSES_DB (pointing to v1 emiot.sqlite) are dead code. Do not
-  call course_row() — all course queries use gmiot_course_row() and GMIOT_DB.
-  Leave these in place until the dead code is explicitly cleaned up.
-
 - The salary_min/salary_max fields use 0 as a null sentinel. salary_string() handles
   this by treating 0 as absent. Do not assume 0 means zero salary.
 
@@ -317,11 +300,23 @@ descriptions are generic UK content and should not need changing unless the
 job dataset is also replaced.
 
 
-WHAT IS NOT YET BUILT (V2 ROADMAP)
+WHAT IS NOT YET BUILT (V3 ROADMAP)
 ------------------------------------
 Phase 2 — Improved card relevance: filter connections by occupation level and SE route
 Phase 3 — Progression advisory mode: Sonnet generates full pathway narrative using SE data
 Phase 4 — Desktop/tablet progression map: visual network on wider screens
+
+V3 CLEAN-UP NOTES (2026-04-16)
+--------------------------------
+- v1 directory (C:\Dev\pathwayiq) deleted — fully superseded by v3
+- job_roles_asset.db: all cluster/network/staging tables dropped; only `jobs` remains
+- api.py: dead code removed — COURSES_DB, course_row(), OLLAMA_CHAT_URL,
+  GATEKEEP_MODEL, gatekeep_jobs(), gatekeep_courses(), _parse_llm_json(), LEVEL_REF
+- api.py: bug fixed — chat endpoint was calling course_row() (v1, always returned None)
+  instead of gmiot_course_row(); course overview field now correctly populated
+- scripts/: 30 cluster/diagnostic scripts + 10 snippet HTMLs moved to scripts/archive/
+- 80 generated cluster output files (narrative .txt, network .html/.json) deleted
+- Backup: job_roles_asset_v2_backup.db in project root (pre-cleanup snapshot)
 
 
 DEPENDENCIES (all installed in venv)
