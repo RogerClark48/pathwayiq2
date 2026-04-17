@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FutureFinder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet" />
+
+<style>
+/* ── Design tokens (copied from Tom's mockup) ────────────────────────── */
+:root {
+  --blue-brand-50:  #E8F8FE;
+  --blue-brand-100: #A8E6F8;
+  --blue-brand-400: #29C6F0;
+  --blue-brand-600: #1A9EC4;
+  --blue-brand-800: #0D6A8A;
+  --blue-50:  #E6F1FB;
+  --blue-400: #378ADD;
+  --blue-600: #185FA5;
+  --coral-50: #FAECE7;
+  --coral-400:#D85A30;
+  --pink-50:  #FBEAF0;
+  --pink-400: #D4537E;
+  --purple-50:#EEEDFE;
+  --purple-400:#7F77DD;
+  --amber-50: #FAEEDA;
+  --amber-400:#BA7517;
+  --gray-50:  #F5F4F0;
+  --gray-100: #ECEAE3;
+  --gray-200: #D3D1C7;
+  --gray-400: #888780;
+  --gray-600: #5F5E5A;
+  --gray-800: #2C2C2A;
+  --bg:       #F5F4F0;
+  --surface:  #FFFFFF;
+  --border:   rgba(0,0,0,0.08);
+  --border-md:rgba(0,0,0,0.13);
+  --text-1:   #1A1918;
+  --text-2:   #5F5E5A;
+  --text-3:   #888780;
+  --accent:   #29C6F0;
+  --accent-dk:#1A9EC4;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text-1);
+  font-size: 14px;
+  line-height: 1.5;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+/* Decision: sidebar carries only logo + Start over. Brief says no future-feature
+   nav items — they add noise without value at this stage. */
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.sidebar-logo {
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.logo-mark { width: 28px; height: 34px; flex-shrink: 0; }
+.logo-mark svg { width: 28px; height: 34px; }
+
+.logo-text {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-1);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.sidebar-nav { padding: 12px 8px; flex: 1; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-2);
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.nav-item:hover { background: var(--gray-50); color: var(--text-1); }
+
+.nav-icon {
+  width: 16px; height: 16px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+/* ── Workspace ───────────────────────────────────────────────────────── */
+/* Decision: chat column fixed at 400px, results panel takes remaining space.
+   Rationale: keeps chat readable without squeezing either panel; at 1280px
+   this leaves ~850px for results — plenty for 2+ cards side by side if needed. */
+.workspace {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ── Chat column ─────────────────────────────────────────────────────── */
+.chat-col {
+  width: 400px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.chat-col-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chat-col-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.chat-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-behavior: smooth;
+}
+
+/* Welcome message shown on fresh session */
+.welcome-msg {
+  font-size: 13.5px;
+  color: var(--text-2);
+  line-height: 1.6;
+  padding: 12px 14px;
+  background: var(--gray-50);
+  border-radius: 4px var(--r-md) var(--r-md) var(--r-md);
+}
+
+/* Chat bubbles */
+.bubble-user {
+  align-self: flex-end;
+  background: var(--blue-brand-50);
+  color: var(--blue-brand-800);
+  padding: 10px 14px;
+  border-radius: var(--r-md) 4px var(--r-md) var(--r-md);
+  font-size: 13.5px;
+  max-width: 85%;
+  line-height: 1.5;
+}
+
+.bubble-bot {
+  align-self: flex-start;
+  background: var(--gray-50);
+  color: var(--text-2);
+  padding: 10px 14px;
+  border-radius: 4px var(--r-md) var(--r-md) var(--r-md);
+  font-size: 13.5px;
+  max-width: 85%;
+  line-height: 1.5;
+}
+
+.bubble-bot.thinking { opacity: 0.6; font-style: italic; }
+
+/* Chips bar */
+.chips-bar {
+  padding: 0 16px 10px;
+  flex-shrink: 0;
+}
+
+.chips-scroll {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.chips-scroll::-webkit-scrollbar { display: none; }
+
+.chip {
+  padding: 5px 12px;
+  border: 1px solid var(--border-md);
+  border-radius: 20px;
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  background: var(--surface);
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.chip:hover {
+  background: var(--blue-brand-50);
+  border-color: var(--accent);
+  color: var(--blue-brand-600);
+}
+
+/* Chat input bar */
+.chat-input-bar {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  background: var(--surface);
+}
+
+.chat-input {
+  flex: 1;
+  height: 40px;
+  background: var(--gray-50);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0 16px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13.5px;
+  color: var(--text-1);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.chat-input:focus {
+  background: white;
+  border-color: var(--accent);
+}
+
+.chat-input::placeholder { color: var(--text-3); }
+
+.send-btn {
+  height: 40px;
+  width: 40px;
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s;
+  flex-shrink: 0;
+}
+
+.send-btn:hover { background: var(--accent-dk); }
+.send-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Results column ──────────────────────────────────────────────────── */
+/* Decision: results column is scrollable with padding; cards stack vertically.
+   Keeping it simple for a prototype — grid layout can be added in a later pass
+   if the panel is wide enough to warrant two columns. */
+.results-col {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.results-header {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+/* ── Result cards ────────────────────────────────────────────────────── */
+.result-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s;
+}
+
+.result-card:hover { box-shadow: var(--shadow-md); }
+
+.result-card-type {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+.result-card.course-card .result-card-type { color: var(--blue-brand-600); }
+.result-card.career-card .result-card-type { color: var(--accent-dk); }
+
+.result-card-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-1);
+  margin-bottom: 8px;
+  line-height: 1.35;
+}
+
+.result-card-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.pill-amber  { background: var(--amber-50);      color: var(--amber-400); }
+.pill-blue   { background: var(--blue-brand-50);  color: var(--blue-brand-600); }
+.pill-grey   { background: var(--gray-100);       color: var(--gray-600); }
+
+.result-card-salary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-dk);
+  margin-bottom: 8px;
+}
+
+.result-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.match-score {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.match-score.high { color: var(--blue-brand-600); }
+
+.adzuna-link {
+  font-size: 12px;
+  color: var(--accent-dk);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.12s;
+}
+
+.adzuna-link:hover { opacity: 0.75; }
+</style>
+</head>
+<body>
+
+<!-- ─── Sidebar ──────────────────────────────────────────────────────── -->
+<aside class="sidebar">
+  <a class="sidebar-logo" id="logo-link" href="#" title="Start over">
+    <div class="logo-mark">
+      <!-- Logo SVG copied from Tom's mockup -->
+      <svg viewBox="0 0 80 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M58 6 C72 6 78 16 72 28 L38 70 C34 76 26 78 20 74 C14 70 12 62 16 56 L46 14 C50 8 54 6 58 6 Z" fill="#29C6F0"/>
+        <path d="M46 28 C58 24 66 32 62 44 L44 74 C40 82 30 84 24 78 C18 72 20 62 26 56 L44 32 C45 30 45 29 46 28 Z" fill="#55D4F5" opacity="0.85"/>
+        <circle cx="50" cy="88" r="11" fill="#2B4EF5"/>
+      </svg>
+    </div>
+    <div class="logo-text">Future<br>Finder</div>
+  </a>
+
+  <nav class="sidebar-nav">
+    <button class="nav-item" id="start-over-btn" title="Clear chat and results">
+      <span class="nav-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 2L3 2M3 2L6 5M3 2L6 -1" transform="translate(0,2)"/>
+          <path d="M2.5 8 A5.5 5.5 0 1 1 8 13.5"/>
+          <path d="M2 5l.5 3 3-.5"/>
+        </svg>
+      </span>
+      Start over
+    </button>
+  </nav>
+</aside>
+
+<!-- ─── Workspace ────────────────────────────────────────────────────── -->
+<div class="workspace">
+
+  <!-- Chat column -->
+  <div class="chat-col">
+    <div class="chat-col-header">
+      <div class="chat-col-title">Ask FutureFinder</div>
+    </div>
+
+    <div class="chat-thread" id="chat-thread">
+      <div class="welcome-msg" id="welcome-msg">
+        Not sure where to start? Tell me what you're interested in and I'll find
+        the right courses and careers for you.
+      </div>
+    </div>
+
+    <!-- Suggestion chips — shown until first message is sent -->
+    <div class="chips-bar" id="chips-bar">
+      <div class="chips-scroll">
+        <button class="chip">I'm interested in Engineering</button>
+        <button class="chip">Show me Level 3 courses</button>
+        <button class="chip">What can I do after a T Level?</button>
+        <button class="chip">I want to work in Health</button>
+        <button class="chip">What's the difference between HNC and HND?</button>
+        <button class="chip">Show me higher level courses</button>
+      </div>
+    </div>
+
+    <div class="chat-input-bar">
+      <input
+        class="chat-input"
+        id="chat-input"
+        type="text"
+        placeholder="Ask about courses and careers…"
+        autocomplete="off"
+      />
+      <button class="send-btn" id="send-btn" title="Send">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 8h12M9 3l5 5-5 5"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Results column — empty until chat returns results -->
+  <div class="results-col" id="results-col"></div>
+
+</div><!-- /workspace -->
+
+<script>
+'use strict';
+
+// ── Session ID ──────────────────────────────────────────────────────────
+// Matches app.js session handling exactly: stored in sessionStorage so each
+// tab gets its own independent session.
+function getOrCreateSessionId() {
+  let sid = sessionStorage.getItem('futurefinder_dashboard_session_id');
+  if (!sid) {
+    sid = crypto.randomUUID();
+    sessionStorage.setItem('futurefinder_dashboard_session_id', sid);
+  }
+  return sid;
+}
+let SESSION_ID = getOrCreateSessionId();
+
+// ── State ───────────────────────────────────────────────────────────────
+const sessionContext  = [];   // titles of things explored this session
+const chatHistory     = [];   // { role, content } pairs for Haiku context
+const browsingHistory = [];   // { type, title, id } for Haiku context
+let   candidateSet    = null; // active search set
+let   chatStarted     = false;
+
+// ── DOM refs ────────────────────────────────────────────────────────────
+const chatThread   = document.getElementById('chat-thread');
+const chipsBar     = document.getElementById('chips-bar');
+const welcomeMsg   = document.getElementById('welcome-msg');
+const chatInput    = document.getElementById('chat-input');
+const sendBtn      = document.getElementById('send-btn');
+const resultsCol   = document.getElementById('results-col');
+
+// ── Salary helpers ──────────────────────────────────────────────────────
+// Matches app.js shortSalary: "£25,000 – £68,000" → "£25k–£68k"
+function shortSalary(salary) {
+  if (!salary) return null;
+  return salary
+    .replace(/£(\d{1,3}),000/g, '£$1k')
+    .replace(' – ', '–');
+}
+
+// ── Chat thread helpers ─────────────────────────────────────────────────
+function addBubble(text, cls) {
+  if (welcomeMsg && welcomeMsg.parentNode) welcomeMsg.remove();
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = text;
+  chatThread.appendChild(div);
+  chatThread.scrollTop = chatThread.scrollHeight;
+  return div;
+}
+
+function addUserBubble(text)     { return addBubble(text, 'bubble-user'); }
+function addBotBubble(text, extra) {
+  const cls = extra ? `bubble-bot ${extra}` : 'bubble-bot';
+  return addBubble(text, cls);
+}
+
+// ── Results panel helpers ───────────────────────────────────────────────
+function clearResults() {
+  resultsCol.innerHTML = '';
+}
+
+function addResultsHeader(text) {
+  const h = document.createElement('div');
+  h.className = 'results-header';
+  h.textContent = text;
+  resultsCol.appendChild(h);
+}
+
+// ── Card builders ───────────────────────────────────────────────────────
+function makePill(text, cls) {
+  if (!text) return null;
+  const span = document.createElement('span');
+  span.className = `pill ${cls}`;
+  span.textContent = text;
+  return span;
+}
+
+function buildCourseCard(course) {
+  const card = document.createElement('div');
+  card.className = 'result-card course-card';
+
+  const type = document.createElement('div');
+  type.className = 'result-card-type';
+  type.textContent = 'Course';
+
+  const title = document.createElement('div');
+  title.className = 'result-card-title';
+  title.textContent = course.title;
+
+  const pills = document.createElement('div');
+  pills.className = 'result-card-pills';
+
+  const qPill = makePill(course.qualification_type || null, 'pill-amber');
+  if (qPill) pills.appendChild(qPill);
+
+  if (course.level) {
+    const lPill = makePill(`Level ${course.level}`, 'pill-blue');
+    if (lPill) pills.appendChild(lPill);
+  }
+
+  const pPill = makePill(course.provider || null, 'pill-grey');
+  if (pPill) pills.appendChild(pPill);
+
+  card.append(type, title, pills);
+
+  if (course.match_score) {
+    const footer = document.createElement('div');
+    footer.className = 'result-card-footer';
+    const score = document.createElement('span');
+    score.className = `match-score${course.match_score >= 80 ? ' high' : ''}`;
+    score.textContent = `${course.match_score}% match`;
+    footer.appendChild(score);
+    card.appendChild(footer);
+  }
+
+  sessionContext.push(course.title);
+  browsingHistory.push({ type: 'course', title: course.title, id: String(course.id) });
+  return card;
+}
+
+function buildCareerCard(job) {
+  const card = document.createElement('div');
+  card.className = 'result-card career-card';
+
+  const type = document.createElement('div');
+  type.className = 'result-card-type';
+  type.textContent = 'Career';
+
+  const title = document.createElement('div');
+  title.className = 'result-card-title';
+  title.textContent = job.title;
+
+  const pills = document.createElement('div');
+  pills.className = 'result-card-pills';
+  const srcPill = makePill(job.source || null, 'pill-grey');
+  if (srcPill) pills.appendChild(srcPill);
+
+  card.append(type, title, pills);
+
+  // Salary: job.salary is a pre-formatted string from salary_string() in api.py.
+  // Use shortSalary to compact it to "£25k–£68k" style.
+  const sal = shortSalary(job.salary);
+  if (sal) {
+    const salDiv = document.createElement('div');
+    salDiv.className = 'result-card-salary';
+    salDiv.textContent = sal;
+    card.appendChild(salDiv);
+  }
+
+  // Adzuna link — URL pattern copied from app.js line 769
+  const footer = document.createElement('div');
+  footer.className = 'result-card-footer';
+
+  const adzuna = document.createElement('a');
+  adzuna.className = 'adzuna-link';
+  adzuna.href = `https://www.adzuna.co.uk/jobs/search?q=${encodeURIComponent('"' + job.title + '"')}&loc=67883`;
+  adzuna.target = '_blank';
+  adzuna.rel = 'noopener noreferrer';
+  adzuna.textContent = 'Find vacancies →';
+
+  footer.appendChild(adzuna);
+
+  if (job.match_score) {
+    const score = document.createElement('span');
+    score.className = `match-score${job.match_score >= 80 ? ' high' : ''}`;
+    score.textContent = `${job.match_score}% match`;
+    footer.appendChild(score);
+  }
+
+  card.appendChild(footer);
+
+  sessionContext.push(job.title);
+  browsingHistory.push({ type: 'career', title: job.title, id: String(job.id) });
+  return card;
+}
+
+function renderResults(results) {
+  clearResults();
+
+  const courses = results.filter(r => r.type !== 'job');
+  const jobs    = results.filter(r => r.type === 'job');
+
+  if (courses.length > 0) {
+    addResultsHeader(`${courses.length} course${courses.length !== 1 ? 's' : ''}`);
+    courses.forEach(c => resultsCol.appendChild(buildCourseCard(c)));
+  }
+
+  if (jobs.length > 0) {
+    addResultsHeader(`${jobs.length} career${jobs.length !== 1 ? 's' : ''}`);
+    jobs.forEach(j => resultsCol.appendChild(buildCareerCard(j)));
+  }
+}
+
+// ── Chat submit ─────────────────────────────────────────────────────────
+async function handleSubmit() {
+  const message = chatInput.value.trim();
+  if (!message) return;
+
+  chatInput.value = '';
+  sendBtn.disabled = true;
+
+  // Hide chips and welcome message after first send
+  if (!chatStarted) {
+    chatStarted = true;
+    chipsBar.style.display = 'none';
+  }
+
+  addUserBubble(message);
+  const thinkingBubble = addBotBubble('Thinking…', 'thinking');
+
+  // POST /chat — request body matches app.js handleChatSubmit exactly
+  try {
+    const resp = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        session_id:       SESSION_ID,
+        session_context:  sessionContext.slice(),
+        chat_history:     chatHistory.slice(),
+        browsing_history: browsingHistory.slice(),
+        saved_items:      { courses: [], careers: [] },
+        candidate_set:    candidateSet,
+      }),
+    });
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    if (data.candidate_set !== undefined) candidateSet = data.candidate_set;
+
+    // Replace thinking bubble with Haiku acknowledgement
+    // Decision: ack goes inline in chat thread (no separate bottom bar on desktop)
+    if (data.acknowledgement) {
+      thinkingBubble.textContent = data.acknowledgement;
+      thinkingBubble.classList.remove('thinking');
+      chatHistory.push({ role: 'user',      content: message });
+      chatHistory.push({ role: 'assistant', content: data.acknowledgement });
+    } else {
+      thinkingBubble.remove();
+    }
+
+    // explain-type responses (response_text) come back as a bot bubble only
+    if (data.response_text) {
+      const bubble = addBotBubble(data.response_text);
+      chatHistory.push({ role: 'assistant', content: data.response_text });
+      clearResults();
+    } else if (data.results && data.results.length > 0) {
+      renderResults(data.results);
+    }
+
+  } catch (err) {
+    thinkingBubble.textContent = 'Sorry — something went wrong. Please try again.';
+    thinkingBubble.classList.remove('thinking');
+    console.error('[dashboard] chat error:', err);
+  }
+
+  sendBtn.disabled = false;
+  chatInput.focus();
+}
+
+// ── Event listeners ─────────────────────────────────────────────────────
+sendBtn.addEventListener('click', handleSubmit);
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleSubmit(); });
+
+// Chips: populate input only — do not auto-send (per brief)
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    chatInput.value = chip.textContent;
+    chatInput.focus();
+  });
+});
+
+// Start over / logo: reset all state
+function startOver() {
+  chatStarted = false;
+  sessionContext.length  = 0;
+  chatHistory.length     = 0;
+  browsingHistory.length = 0;
+  candidateSet           = null;
+
+  chatThread.innerHTML = '';
+  const welcome = document.createElement('div');
+  welcome.className = 'welcome-msg';
+  welcome.id = 'welcome-msg';
+  welcome.textContent = 'Not sure where to start? Tell me what you\'re interested in and I\'ll find the right courses and careers for you.';
+  chatThread.appendChild(welcome);
+
+  clearResults();
+  chipsBar.style.display = '';
+  chatInput.value = '';
+  chatInput.focus();
+
+  // New session ID so server treats this as a fresh session
+  SESSION_ID = crypto.randomUUID();
+  sessionStorage.setItem('futurefinder_dashboard_session_id', SESSION_ID);
+}
+
+document.getElementById('start-over-btn').addEventListener('click', startOver);
+document.getElementById('logo-link').addEventListener('click', e => {
+  e.preventDefault();
+  startOver();
+});
+</script>
+
+</body>
+</html>
