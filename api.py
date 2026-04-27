@@ -3,6 +3,7 @@ import os
 import sqlite3
 import time
 from datetime import datetime
+from urllib.parse import quote
 import httpx
 import numpy as np
 import voyageai
@@ -2628,12 +2629,80 @@ def log_analytics():
 
 
 # ---------------------------------------------------------------------------
-# Embed test endpoint
+# Embed endpoints
 # ---------------------------------------------------------------------------
+_ADZUNA_LOC = "67883"  # Greater Manchester
+
 @app.get("/api/embed/hello")
 def embed_hello():
     course = request.args.get("course", None)
     return jsonify({"course": course, "message": "hello from PathwayIQ"})
+
+
+@app.get("/api/embed/jobs")
+def embed_jobs():
+    course_id = request.args.get("course_id", "").strip()
+    if not course_id:
+        return jsonify({"error": "course_id required"}), 400
+
+    try:
+        course_id_int = int(course_id)
+    except ValueError:
+        return jsonify({"error": "course_id must be an integer"}), 400
+
+    limit = min(int(request.args.get("limit", 5)), 20)
+
+    # Fetch course title
+    gmiot_conn = sqlite3.connect(GMIOT_DB)
+    gmiot_conn.row_factory = sqlite3.Row
+    course_row = gmiot_conn.execute(
+        "SELECT course_title FROM gmiot_courses WHERE course_id = ?", (course_id_int,)
+    ).fetchone()
+    gmiot_conn.close()
+
+    if not course_row:
+        return jsonify({"error": "course not found"}), 404
+
+    course_title = course_row["course_title"]
+
+    # Fetch top connected jobs from connections table
+    cconn = sqlite3.connect(CONNECTIONS_DB)
+    cconn.row_factory = sqlite3.Row
+    connections = cconn.execute(
+        "SELECT job_id, semantic_score FROM course_job_connections "
+        "WHERE course_id = ? ORDER BY semantic_score DESC LIMIT ?",
+        (course_id_int, limit),
+    ).fetchall()
+    cconn.close()
+
+    # Fetch job details from jobs DB (NCS preferred)
+    jobs_conn = sqlite3.connect(JOBS_DB)
+    jobs_conn.row_factory = sqlite3.Row
+    jobs = []
+    for row in connections:
+        job = jobs_conn.execute(
+            "SELECT id, title, salary_min, salary_max FROM jobs WHERE id = ?",
+            (row["job_id"],),
+        ).fetchone()
+        if not job:
+            continue
+        sal_min = job["salary_min"] if job["salary_min"] else None
+        sal_max = job["salary_max"] if job["salary_max"] else None
+        adzuna_url = (
+            f"https://www.adzuna.co.uk/jobs/search"
+            f"?q=%22{quote(job['title'])}%22&loc={_ADZUNA_LOC}"
+        )
+        jobs.append({
+            "id":         job["id"],
+            "title":      job["title"],
+            "relevance":  row["semantic_score"],
+            "salary_min": sal_min,
+            "salary_max": sal_max,
+            "adzuna_url": adzuna_url,
+        })
+    jobs_conn.close()
+
+    return jsonify({"course_id": course_id_int, "course_title": course_title, "jobs": jobs})
 
 
 # ---------------------------------------------------------------------------
