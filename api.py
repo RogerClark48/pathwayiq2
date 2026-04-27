@@ -63,7 +63,7 @@ PROGRESSION_SYSTEM_PROMPT = (
 # App setup
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/embed/*": {"origins": ["https://gillscottconsultancy.co.uk"]}})
 app.secret_key   = os.environ.get("SECRET_KEY", "dev-fallback-key")
 ADMIN_PASSWORD   = os.environ.get("ADMIN_PASSWORD", "admin")
 AUTH_ENABLED     = os.environ.get("AUTH_ENABLED", "false").lower() == "true"
@@ -2623,6 +2623,15 @@ def log_analytics():
     except Exception:
         pass
     return ("", 204)
+
+
+# ---------------------------------------------------------------------------
+# Embed test endpoint
+# ---------------------------------------------------------------------------
+@app.get("/api/embed/hello")
+def embed_hello():
+    course = request.args.get("course", None)
+    return jsonify({"course": course, "message": "hello from PathwayIQ"})
 
 
 # ---------------------------------------------------------------------------
