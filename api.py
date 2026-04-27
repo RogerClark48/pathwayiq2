@@ -1424,6 +1424,8 @@ def require_auth():
         return
     if request.path.startswith("/admin/"):
         return  # admin routes handle their own auth
+    if request.path.startswith("/api/embed/"):
+        return  # embed endpoints are publicly accessible
     if session.get("authenticated"):
         return
     return redirect(url_for("access_page"))
