@@ -51,6 +51,7 @@ SSA_MAP = {
     'Construction':   'Construction, Planning and the Built Environment',
     'Health':         'Health, Public Services and Care',
     'Arts & Media':   'Arts, Media and Publishing',
+    'Sustainability':  'Sustainability',
 }
 
 # ---------------------------------------------------------------------------
@@ -59,15 +60,16 @@ SSA_MAP = {
 # ---------------------------------------------------------------------------
 
 QUAL_FILTER_MAP = {
-    'T Level':           ['T Level'],
-    'Apprenticeship':    ['Apprenticeship'],
-    'HNC':               ['HNC', 'HNC/HTQ', 'HTQ', 'HNC/HND'],
-    'HND':               ['HND', 'HND/HTQ', 'HNC/HND'],
-    'Foundation Degree': ['FdA', 'FdSc', 'CertHE', 'DipHE'],
-    "Bachelor's Degree": ['BA Hons', 'BEng Hons', 'BSc Hons'],
-    "Master's Degree":   ['MSc'],
-    'Access to HE':      ['Access to HE'],
-    'Short Course':      ['Award', 'Short Course'],
+    'T Level':              ['T Level'],
+    'Apprenticeship':       ['Apprenticeship'],
+    'HNC':                  ['HNC', 'HNC/HTQ', 'HTQ', 'HNC/HND'],
+    'HND':                  ['HND', 'HND/HTQ', 'HNC/HND'],
+    'Foundation Degree':    ['FdA', 'FdSc'],
+    'CertHE / DipHE':       ['CertHE', 'DipHE'],
+    "Bachelor's Degree":    ['BA Hons', 'BEng Hons', 'BSc Hons'],
+    "Master's Degree":      ['MSc'],
+    'Access to HE':         ['Access to HE'],
+    'Short Course':         ['Award', 'Short Course'],
 }
 
 # ---------------------------------------------------------------------------

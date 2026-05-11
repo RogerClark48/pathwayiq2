@@ -1754,6 +1754,55 @@ def serve_static(path):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+@app.get("/api/welcome-data")
+def api_welcome_data():
+    """Return quals, SSA codes, and course-count matrix for the welcome flow.
+
+    quals — keys of QUAL_FILTER_MAP (display labels), filtered to those with
+            at least one course in the DB.
+    counts — { display_label: { ssa_code: n } } aggregated across all raw
+             qual_type values that map to each display label.
+    """
+    conn = sqlite3.connect(GMIOT_DB)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT DISTINCT CAST(ssa_code AS TEXT) AS ssa
+            FROM gmiot_courses
+            WHERE ssa_code IS NOT NULL
+        """)
+        ssa_codes = [r["ssa"] for r in cur.fetchall()]
+
+        # Raw counts keyed by (qual_type, ssa_code) from the DB.
+        cur.execute("""
+            SELECT qual_type, CAST(ssa_code AS TEXT) AS ssa, COUNT(*) AS n
+            FROM gmiot_courses
+            WHERE qual_type IS NOT NULL AND ssa_code IS NOT NULL
+            GROUP BY qual_type, ssa_code
+        """)
+        raw = {}
+        for row in cur.fetchall():
+            raw.setdefault(row["qual_type"], {})[row["ssa"]] = row["n"]
+
+        # Aggregate into display labels via QUAL_FILTER_MAP.
+        counts = {}
+        for label, raw_types in QUAL_FILTER_MAP.items():
+            for qt in raw_types:
+                if qt in raw:
+                    bucket = counts.setdefault(label, {})
+                    for ssa, n in raw[qt].items():
+                        bucket[ssa] = bucket.get(ssa, 0) + n
+
+        # Only return labels that have at least one course.
+        quals = [label for label in QUAL_FILTER_MAP if label in counts]
+
+        return jsonify({"quals": quals, "ssa_codes": ssa_codes, "counts": counts})
+    finally:
+        conn.close()
+
+
 @app.get("/search/courses")
 def search_courses():
     subject       = request.args.get("subject", "").strip()
