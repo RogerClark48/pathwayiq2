@@ -3,13 +3,15 @@
 import { state } from './state.js';
 import { register, go } from './router.js';
 import { loadWelcomeData } from './api.js';
-import { WelcomeView } from './views/welcome.js';
-import { EditView }    from './views/edit.js';
-import { StartView }   from './views/start.js';
+import { WelcomeView }    from './views/welcome.js';
+import { EditView }       from './views/edit.js';
+import { StartView }      from './views/start.js';
+import { StartChatView }  from './views/start-chat.js';
 
-register('welcome', () => WelcomeView());
-register('edit',    () => EditView());
-register('start',   () => StartView());
+register('welcome',    () => WelcomeView());
+register('edit',       () => EditView());
+register('start',      () => StartView());
+register('chat-first', () => StartChatView());
 
 function updateBadge() {
   const badge = document.getElementById('saved-count');
@@ -19,5 +21,5 @@ function updateBadge() {
 document.addEventListener('DOMContentLoaded', () => {
   loadWelcomeData(); // kick fetch immediately — welcome view reuses the same promise
   updateBadge();
-  go('welcome');
+  go('chat-first');
 });

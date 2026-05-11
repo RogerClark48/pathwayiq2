@@ -9,7 +9,7 @@ function getOrCreateSessionId() {
 export const state = {
   filter:  { subjects: new Set() },
   session: { id: getOrCreateSessionId(), interactionCount: 0, advisoryGap: 0 },
-  chat:    { history: [], lastContext: null },
+  chat:    { messages: [], history: [], lastContext: null },
   saved:   { items: [] },
 };
 
@@ -39,6 +39,10 @@ export function resetAdvisoryGap() {
 }
 
 /* ── chat ────────────────────────────────────────────────────────────────── */
+
+export function submitMessage(text) {
+  state.chat.messages.push({ role: 'user', text });
+}
 
 export function pushChatTurn(turn) {
   state.chat.history.push(turn);
