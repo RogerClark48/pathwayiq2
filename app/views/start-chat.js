@@ -1,6 +1,7 @@
 /* Chat-first start screen */
 
-import { state, submitMessage } from '../state.js';
+import { state, submitMessage, setWaiting } from '../state.js';
+import { postWelcomeChat } from '../api.js';
 
 const WELCOME_TEXT =
   "Hi — I'm here to help you find a course at the Greater Manchester " +
@@ -94,9 +95,19 @@ export function StartChatView() {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  function submit() {
+  function makeThinkingBubble() {
+    const wrap  = document.createElement('div');
+    wrap.className = 'chat-bubble chat-bubble--bot chat-bubble--thinking';
+    const inner = document.createElement('div');
+    inner.className = 'bubble-text bubble-text--thinking';
+    inner.textContent = '···';
+    wrap.appendChild(inner);
+    return wrap;
+  }
+
+  async function submit() {
     const text = chatInput.value.trim();
-    if (!text) return;
+    if (!text || state.chat.isWaitingForResponse) return;
 
     // Remove starter chips permanently on first user message.
     if (starterEl) { starterEl.remove(); starterEl = null; }
@@ -107,13 +118,31 @@ export function StartChatView() {
     sendBtn.disabled = true;
     scrollBottom();
 
-    // Phase 1 stub — placeholder bot response.
-    setTimeout(() => {
-      const reply = 'Chat backend coming soon — thanks for exploring!';
+    // Show thinking indicator and lock input.
+    const thinkingEl = makeThinkingBubble();
+    messagesEl.appendChild(thinkingEl);
+    scrollBottom();
+    setWaiting(true);
+    chatInput.disabled = true;
+
+    try {
+      const data = await postWelcomeChat(state.session.id, text);
+      thinkingEl.remove();
+      const reply = data.bot_response;
       state.chat.messages.push({ role: 'bot', text: reply });
       messagesEl.appendChild(makeBubble('bot', reply));
+    } catch (err) {
+      console.error('[chat/welcome]', err);
+      thinkingEl.remove();
+      const reply = 'Something went wrong — please try again.';
+      state.chat.messages.push({ role: 'bot', text: reply });
+      messagesEl.appendChild(makeBubble('bot', reply));
+    } finally {
+      setWaiting(false);
+      chatInput.disabled = false;
+      chatInput.focus();
       scrollBottom();
-    }, 400);
+    }
   }
 
   sendBtn.addEventListener('click', submit);

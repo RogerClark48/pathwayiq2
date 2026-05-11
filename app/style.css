@@ -734,6 +734,14 @@ body {
   border-radius: 16px 4px 16px 16px;
 }
 
+/* Thinking indicator */
+.bubble-text--thinking {
+  color: var(--c-muted);
+  font-size: 18px;
+  letter-spacing: 2px;
+  padding: 8px 14px;
+}
+
 /* Starter chips */
 .starter-chips {
   display: flex;

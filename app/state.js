@@ -9,7 +9,7 @@ function getOrCreateSessionId() {
 export const state = {
   filter:  { subjects: new Set() },
   session: { id: getOrCreateSessionId(), interactionCount: 0, advisoryGap: 0 },
-  chat:    { messages: [], history: [], lastContext: null },
+  chat:    { messages: [], history: [], lastContext: null, isWaitingForResponse: false },
   saved:   { items: [] },
 };
 
@@ -42,6 +42,10 @@ export function resetAdvisoryGap() {
 
 export function submitMessage(text) {
   state.chat.messages.push({ role: 'user', text });
+}
+
+export function setWaiting(val) {
+  state.chat.isWaitingForResponse = val;
 }
 
 export function pushChatTurn(turn) {
