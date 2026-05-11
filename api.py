@@ -202,6 +202,33 @@ yourself — your dreams, your passions, what makes you tick!"
 - Do not use emojis.
 """
 
+_SELECT_COURSES_TOOL = {
+    "name": "select_courses",
+    "description": "Select the most relevant courses for this user from the candidate set.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "selected_course_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": (
+                    "Course IDs in order of relevance (most relevant first). "
+                    "Select 5 to 8 courses."
+                ),
+            },
+            "intro_text": {
+                "type": "string",
+                "description": (
+                    "One sentence introducing the list to the user. "
+                    "Example: 'Based on your interest in engineering, here are some courses to explore.' "
+                    "Plain English, warm, short, mobile-readable."
+                ),
+            },
+        },
+        "required": ["selected_course_ids", "intro_text"],
+    },
+}
+
 PROGRESSION_SYSTEM_PROMPT = (
     "You are a career guidance advisor helping college students understand career pathways. "
     "You give warm, honest, plain-English advice grounded in how careers actually develop. "
@@ -2676,6 +2703,156 @@ def saved_campuses():
     return jsonify(list(campus_map.values()))
 
 
+def retrieve_courses_for_pivot(session_id: str) -> dict:
+    """
+    Build a semantic query from the user's welcome conversation turns, embed it,
+    retrieve top Chroma course candidates, then use Haiku to select the best 5-8.
+    Returns {"intro_text": str, "courses": [{"course_id", "course_title", "preview_text"}]}.
+    """
+    _empty = {
+        "intro_text": "I couldn't find good matches yet — try telling me a bit more about what interests you.",
+        "courses": [],
+    }
+
+    sess = get_welcome_session(session_id)
+    with _welcome_sessions_lock:
+        messages = list(sess["messages"])
+
+    user_turns = [m["content"] for m in messages if m["role"] == "user"]
+    if not user_turns:
+        return _empty
+
+    query_text = " ".join(user_turns)
+    print(f"[pivot_retrieval] session={session_id[:8]}... query={query_text!r}", flush=True)
+
+    # Embed the user's stated interests
+    try:
+        embed_result = vo.embed(
+            [query_text], model=VOYAGE_MODEL,
+            input_type="query", output_dimension=VOYAGE_DIMS,
+        )
+        vector = embed_result.embeddings[0]
+    except Exception as e:
+        print(f"[pivot_retrieval] embed error: {e}", flush=True)
+        return _empty
+
+    # Chroma — overview chunks only, top 15
+    try:
+        hits = courses_col.query(
+            query_embeddings=[vector],
+            n_results=15,
+            where={"chunk": {"$eq": "overview"}},
+            include=["metadatas", "distances", "documents"],
+        )
+    except Exception as e:
+        print(f"[pivot_retrieval] Chroma error: {e}", flush=True)
+        return _empty
+
+    candidates = []
+    for meta, dist, doc in zip(
+        hits["metadatas"][0], hits["distances"][0], hits["documents"][0]
+    ):
+        candidates.append({
+            "course_id": int(meta["course_id"]),
+            "title":     meta.get("course_name", ""),
+            "qual_type": meta.get("qualification_type", ""),
+            "level":     meta.get("level", ""),
+            "preview":   (doc or "")[:300],
+        })
+
+    if not candidates:
+        return _empty
+
+    # Format conversation context for Haiku
+    conv_lines = []
+    for m in messages[-6:]:
+        role = "User" if m["role"] == "user" else "Assistant"
+        conv_lines.append(f"{role}: {m['content']}")
+    conversation_text = "\n".join(conv_lines)
+
+    candidate_lines = [
+        f"{c['course_id']} | {c['title']} | {c['qual_type']} Level {c['level']} | {c['preview']}"
+        for c in candidates
+    ]
+    haiku_msg = (
+        f"Conversation:\n{conversation_text}\n\n"
+        f"Candidate courses (ID | Title | Qual Level | Preview):\n"
+        + "\n".join(candidate_lines)
+        + "\n\nSelect the 5–8 most relevant courses for this user, in order of relevance."
+    )
+
+    # Haiku tool-use selection
+    try:
+        resp = httpx.post(
+            ANTHROPIC_URL,
+            headers={
+                "x-api-key":         ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type":      "application/json",
+            },
+            json={
+                "model":       HAIKU_MODEL,
+                "max_tokens":  300,
+                "temperature": 0.3,
+                "tools":       [_SELECT_COURSES_TOOL],
+                "tool_choice": {"type": "tool", "name": "select_courses"},
+                "messages":    [{"role": "user", "content": haiku_msg}],
+            },
+            timeout=20.0,
+        )
+        resp.raise_for_status()
+        tool_use = next(
+            (b for b in resp.json()["content"] if b["type"] == "tool_use"), None
+        )
+        if not tool_use:
+            raise ValueError("no tool_use block in response")
+
+        selected_ids = [str(i) for i in (tool_use["input"].get("selected_course_ids") or [])]
+        intro_text   = tool_use["input"].get("intro_text") or "Here are some courses that might interest you."
+        print(f"[pivot_retrieval] selected={selected_ids} intro={intro_text!r}", flush=True)
+
+    except Exception as e:
+        print(f"[pivot_retrieval] Haiku error: {e} — falling back to top 5 Chroma hits", flush=True)
+        selected_ids = [str(c["course_id"]) for c in candidates[:5]]
+        intro_text   = "Here are some courses that might interest you."
+
+    # Batch-fetch overview from SQLite for final display text
+    id_to_cand = {str(c["course_id"]): c for c in candidates}
+    int_ids    = [int(i) for i in selected_ids if i in id_to_cand]
+
+    db_map = {}
+    if int_ids:
+        placeholders = ",".join("?" * len(int_ids))
+        try:
+            conn = sqlite3.connect(GMIOT_DB)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"SELECT course_id, course_title, overview FROM gmiot_courses "
+                f"WHERE course_id IN ({placeholders})",
+                int_ids,
+            ).fetchall()
+            conn.close()
+            db_map = {str(r["course_id"]): r for r in rows}
+        except Exception as e:
+            print(f"[pivot_retrieval] SQLite fetch error: {e}", flush=True)
+
+    courses_out = []
+    for cid in selected_ids:
+        if cid not in id_to_cand:
+            continue
+        cand    = id_to_cand[cid]
+        db_row  = db_map.get(cid)
+        title   = db_row["course_title"] if db_row else cand["title"]
+        preview = ((db_row["overview"] or "") if db_row else cand["preview"])[:200].rstrip()
+        courses_out.append({
+            "course_id":    int(cid),
+            "course_title": title,
+            "preview_text": preview,
+        })
+
+    return {"intro_text": intro_text, "courses": courses_out}
+
+
 @app.post("/chat/welcome")
 def chat_welcome():
     cleanup_welcome_sessions()
@@ -2692,10 +2869,15 @@ def chat_welcome():
     if result["bot_response"] is None:
         return jsonify({"error": "llm_error"}), 502
 
+    course_list = None
+    if result["pivot_to_courses"]:
+        course_list = retrieve_courses_for_pivot(session_id)
+
     return jsonify({
         "session_id":       session_id,
         "bot_response":     result["bot_response"],
         "pivot_to_courses": result["pivot_to_courses"],
+        "course_list":      course_list,
     })
 
 

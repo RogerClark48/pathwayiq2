@@ -1,7 +1,8 @@
 /* Chat-first start screen */
 
-import { state, submitMessage, setWaiting } from '../state.js';
+import { state, submitMessage, setWaiting, setCourseList } from '../state.js';
 import { postWelcomeChat } from '../api.js';
+import { go } from '../router.js';
 
 const WELCOME_TEXT =
   "Hi — I'm here to help you find a course at the Greater Manchester " +
@@ -131,6 +132,11 @@ export function StartChatView() {
       const reply = data.bot_response;
       state.chat.messages.push({ role: 'bot', text: reply });
       messagesEl.appendChild(makeBubble('bot', reply));
+
+      if (data.pivot_to_courses && data.course_list) {
+        setCourseList(data.course_list);
+        setTimeout(() => go('course-list'), 400);
+      }
     } catch (err) {
       console.error('[chat/welcome]', err);
       thinkingEl.remove();

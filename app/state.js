@@ -7,10 +7,11 @@ function getOrCreateSessionId() {
 }
 
 export const state = {
-  filter:  { subjects: new Set() },
-  session: { id: getOrCreateSessionId(), interactionCount: 0, advisoryGap: 0 },
-  chat:    { messages: [], history: [], lastContext: null, isWaitingForResponse: false },
-  saved:   { items: [] },
+  filter:     { subjects: new Set() },
+  session:    { id: getOrCreateSessionId(), interactionCount: 0, advisoryGap: 0 },
+  chat:       { messages: [], history: [], lastContext: null, isWaitingForResponse: false },
+  saved:      { items: [] },
+  courseList: null,
 };
 
 /* ── filter ──────────────────────────────────────────────────────────────── */
@@ -46,6 +47,10 @@ export function submitMessage(text) {
 
 export function setWaiting(val) {
   state.chat.isWaitingForResponse = val;
+}
+
+export function setCourseList(data) {
+  state.courseList = data;
 }
 
 export function pushChatTurn(turn) {
