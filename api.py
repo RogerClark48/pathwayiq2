@@ -29,6 +29,7 @@ _BASE              = os.path.dirname(os.path.abspath(__file__))
 CHROMA_PATH        = os.path.join(_BASE, "chroma_store")
 JOBS_DB            = os.path.join(_BASE, "job_roles_asset.db")
 CONNECTIONS_DB     = os.path.join(_BASE, "connections.db")
+FUTUREFINDER_DB    = os.path.join(_BASE, "futurefinder.sqlite")
 ANALYTICS_DB       = os.path.join(_BASE, "analytics.db")
 VOYAGE_MODEL       = "voyage-3.5"
 VOYAGE_DIMS        = 1024
@@ -2382,6 +2383,84 @@ def job_courses(job_id):
         "job_id":    job_id,
         "job_title": job_meta.get("title"),
         "results":   results,
+    })
+
+
+@app.get("/courses/<int:course_id>/detail")
+def course_detail_ff(course_id):
+    """Full course detail from futurefinder.sqlite + career pathways + card job titles."""
+    conn = sqlite3.connect(FUTUREFINDER_DB)
+    conn.row_factory = sqlite3.Row
+
+    row = conn.execute(
+        "SELECT c.*, p.provider_name "
+        "FROM courses c "
+        "LEFT JOIN providers p ON c.provider_id = p.provider_id "
+        "WHERE c.course_id = ? AND c.is_active = 1",
+        (course_id,),
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({"error": f"Course {course_id} not found"}), 404
+
+    pathways_row = conn.execute(
+        "SELECT narrative_short, narrative, card_jobs, curated_jobs "
+        "FROM course_career_pathways WHERE course_id = ?",
+        (course_id,),
+    ).fetchone()
+    conn.close()
+
+    # Resolve card_job IDs → titles from jobs DB
+    card_jobs_out = []
+    if pathways_row and pathways_row["card_jobs"]:
+        try:
+            job_ids = json.loads(pathways_row["card_jobs"])
+            if job_ids:
+                jconn = sqlite3.connect(JOBS_DB)
+                jconn.row_factory = sqlite3.Row
+                placeholders = ",".join("?" * len(job_ids))
+                job_rows = jconn.execute(
+                    f"SELECT id, title FROM jobs WHERE id IN ({placeholders})",
+                    job_ids,
+                ).fetchall()
+                jconn.close()
+                id_to_title = {r["id"]: r["title"] for r in job_rows}
+                card_jobs_out = [
+                    {"job_id": jid, "title": id_to_title.get(jid, "")}
+                    for jid in job_ids
+                ]
+        except Exception as e:
+            print(f"[course_detail_ff] card_jobs parse error: {e}", flush=True)
+
+    curated_jobs_out = []
+    if pathways_row and pathways_row["curated_jobs"]:
+        try:
+            curated_jobs_out = json.loads(pathways_row["curated_jobs"])
+        except Exception as e:
+            print(f"[course_detail_ff] curated_jobs parse error: {e}", flush=True)
+
+    return jsonify({
+        "course_id":          row["course_id"],
+        "course_title":       row["course_title"],
+        "provider":           row["provider_name"] or "",
+        "campus":             row["campus"] or "",
+        "qual_type":          row["qual_type"] or "",
+        "level":              row["level"],
+        "mode":               row["mode"] or "",
+        "duration":           row["duration"] or "",
+        "course_url":         row["course_url"] or "",
+        "preview":            row["preview"] or "",
+        "overview":           row["overview"] or "",
+        "content":            row["content"] or "",
+        "entry_requirements": row["entry_requirements"] or "",
+        "progression":        row["progression"] or "",
+        "pathways": {
+            "narrative_short": pathways_row["narrative_short"] if pathways_row else "",
+            "narrative":       pathways_row["narrative"]       if pathways_row else "",
+            "card_jobs":       card_jobs_out,
+            "curated_jobs":    curated_jobs_out,
+        } if pathways_row else None,
     })
 
 

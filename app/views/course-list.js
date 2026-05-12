@@ -61,7 +61,11 @@ export function CourseListView() {
 
     row.appendChild(titleEl);
     row.appendChild(previewEl);
-    row.addEventListener('click', () => go('course-stub', { course }));
+    row.addEventListener('click', () => go('course-detail', {
+      courseId:    course.course_id,
+      courseTitle: course.course_title,
+      backRoute:   'course-list',
+    }));
     listEl.appendChild(row);
   });
 

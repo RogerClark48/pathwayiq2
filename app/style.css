@@ -921,3 +921,171 @@ body {
   color: var(--c-muted);
 }
 
+/* ── Course detail screen ────────────────────────────────────────────────── */
+.view-course-detail {
+  display: flex;
+  flex-direction: column;
+}
+
+.cd-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 10px 0;
+  flex-shrink: 0;
+}
+
+.cd-back,
+.cd-save {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--c-brand);
+}
+
+.cd-back:hover,
+.cd-save:hover { background: rgba(26,35,126,0.08); }
+
+.cd-content {
+  padding: 8px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cd-loading,
+.cd-error {
+  font-size: 14px;
+  color: var(--c-muted);
+  padding: 24px 0;
+  text-align: center;
+}
+
+/* Title block */
+.cd-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cd-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--c-brand);
+  line-height: 1.25;
+}
+
+.cd-meta {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-brand);
+  opacity: 0.7;
+}
+
+.cd-sub {
+  font-size: 12px;
+  color: var(--c-muted);
+}
+
+/* Body text */
+.cd-preview {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--c-text);
+  line-height: 1.5;
+}
+
+.cd-section-heading {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-brand);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-top: 4px;
+}
+
+.cd-body {
+  font-size: 13px;
+  color: var(--c-text);
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+/* Expand toggles */
+.cd-expand-btn {
+  align-self: flex-start;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-brand);
+  border-bottom: 1.5px solid var(--c-brand);
+  padding: 0 0 1px;
+  margin-top: 4px;
+}
+
+/* Course URL */
+.cd-course-url {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-brand);
+  text-decoration: underline;
+  margin-top: 4px;
+}
+
+/* Divider */
+.cd-divider {
+  border: none;
+  border-top: 1px solid rgba(26,35,126,0.15);
+  margin: 4px 0 0;
+}
+
+/* Job pills (brief pathways) */
+.cd-job-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cd-job-pill {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-brand);
+  background: var(--c-white);
+  border: 1.5px solid var(--c-brand);
+  border-radius: 20px;
+  padding: 4px 12px;
+}
+
+/* Job cards (full pathways) */
+.cd-job-card {
+  background: var(--c-white);
+  border: 1.5px solid var(--c-brand);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cd-job-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-brand);
+}
+
+.cd-job-card-reason {
+  font-size: 12px;
+  color: var(--c-text);
+  line-height: 1.45;
+}
+
+.cd-pathways {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
