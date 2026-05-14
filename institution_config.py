@@ -24,7 +24,7 @@ INSTITUTION_REGION    = "Greater Manchester"
 # Course database
 # ---------------------------------------------------------------------------
 
-COURSES_DB = os.path.join(_BASE, "gmiot.sqlite")
+COURSES_DB = os.path.join(_BASE, "futurefinder.sqlite")
 
 # ---------------------------------------------------------------------------
 # Partner providers
@@ -46,12 +46,12 @@ PROVIDERS = {
 # ---------------------------------------------------------------------------
 
 SSA_MAP = {
-    'Engineering':    'Engineering and Manufacturing Technologies',
-    'Digital & Tech': 'Information and Communication Technology',
-    'Construction':   'Construction, Planning and the Built Environment',
-    'Health':         'Health, Public Services and Care',
-    'Arts & Media':   'Arts, Media and Publishing',
-    'Sustainability':  'Sustainability',
+    'Engineering':    4,   # Engineering and Manufacturing Technologies
+    'Digital & Tech': 6,   # Information and Communication Technology
+    'Construction':   5,   # Construction, Planning and the Built Environment
+    'Health':         1,   # Health, Public Services and Care
+    'Arts & Media':   10,  # Arts, Media and Publishing
+    'Sustainability': 99,  # Custom code — Sustainability
 }
 
 # ---------------------------------------------------------------------------

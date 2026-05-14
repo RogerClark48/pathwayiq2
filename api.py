@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime
@@ -18,7 +19,6 @@ print(f"[startup] All env vars: {[k for k in os.environ.keys()]}", flush=True)
 
 from institution_config import (
     INSTITUTION_NAME, INSTITUTION_FULL_NAME, INSTITUTION_REGION,
-    COURSES_DB as GMIOT_DB,
     PROVIDERS, SSA_MAP, QUAL_FILTER_MAP, SUBJECT_AREAS,
 )
 
@@ -56,9 +56,8 @@ talking to someone who may be:
 - Someone changing careers
 - Someone uncertain about what they want
 
-GMIoT offers courses from Level 4 (HNC) through Level 7 (Masters), including
-apprenticeships at higher levels. There are no Level 2 or Level 3 courses
-(no GCSEs, no A Levels, no T Levels).
+GMIoT offers courses from Level 3 (T level) through Level 7 (Masters), including
+apprenticeships at higher levels. There are no GCSEs or A Levels). The courses are STEM subjects for the most part.
 
 ## Your goal
 
@@ -74,7 +73,8 @@ bar — any signal that narrows the space is valuable. Examples of usable input:
 
 Any one of these is enough to pivot from interviewing to suggesting. Do not
 hold out for richer input.
-
+Courses can be filtered by the ssa_code field containing values (1 4 5 6 8 10 11 99)
+which are SSA codes.
 ## How to behave
 
 **Be warm, but stay on task.** Friendly in tone, but the goal is finding
@@ -132,8 +132,7 @@ GMIoT? You can browse what's on offer and see if anything catches your eye."
 
 Example: "No worries at all. Sometimes it's easier to talk this through
 with someone in person. GMIoT has advisors who are good at helping people
-figure out where to start — [contact placeholder]. Would those details be
-useful?"
+figure out where to start — you can [book a free course chat](https://gmiot.ac.uk/book-your-course-chat/) with one of their advisors. Would that be helpful?"
 
 If at any point the user gives usable input, abandon the escalation and
 pivot to suggesting courses. The escalation only progresses when the user
@@ -191,6 +190,32 @@ yourself — your dreams, your passions, what makes you tick!"
 
 **About right:**
 "What sort of work would feel like you?"
+
+## Filtering to a subject area
+
+Only use [FILTER:N] when the user is asking for the whole of a top-level subject
+area by its broad name — not for a specific discipline, role, or topic within it.
+
+Use [FILTER:N] for requests like:
+- "show me all engineering courses" → [FILTER:4]
+- "what digital courses do you have?" → [FILTER:6]
+- "I want to see construction options" → [FILTER:5]
+- "show me health courses" → [FILTER:1]
+- "what arts courses are there?" → [FILTER:10]
+- "sport courses" → [FILTER:8]
+- "social science" → [FILTER:11]
+- "sustainability" → [FILTER:99]
+
+Do NOT use [FILTER:N] for specific sub-disciplines or topics within an area —
+those should use [PIVOT_TO_COURSES] so the retrieval system can find the best
+matches. For example:
+- "show me electronics courses" → [PIVOT_TO_COURSES] (not [FILTER:4])
+- "I want to do software development" → [PIVOT_TO_COURSES] (not [FILTER:6])
+- "plumbing courses" → [PIVOT_TO_COURSES] (not [FILTER:5])
+
+Use [FILTER:N] instead of [PIVOT_TO_COURSES] for these cases — do not use both.
+
+Example: "Here are all the digital and technology courses at GMIoT. [FILTER:6]"
 
 ## What not to do
 
@@ -259,10 +284,25 @@ AUTH_ENABLED     = os.environ.get("AUTH_ENABLED", "false").lower() == "true"
 vo = voyageai.Client(api_key=os.environ.get("VOYAGE_API_KEY"))
 
 chroma = chromadb.PersistentClient(path=CHROMA_PATH)
-courses_col          = chroma.get_collection("gmiot_courses")
-jobs_col             = chroma.get_collection("gmiot_jobs")
-courses_learning_col = chroma.get_collection("gmiot_courses_learning")
-jobs_skills_col      = chroma.get_collection("gmiot_jobs_skills")
+jobs_col          = chroma.get_collection("gmiot_jobs")
+jobs_skills_col   = chroma.get_collection("gmiot_jobs_skills")
+match_courses_col = chroma.get_collection("match_courses")
+
+# Ensure job_progression_cache table exists (was dropped in v3 cleanup)
+_jpc_conn = sqlite3.connect(JOBS_DB)
+_jpc_conn.execute("""
+    CREATE TABLE IF NOT EXISTS job_progression_cache (
+        job_id         INTEGER PRIMARY KEY,
+        narrative      TEXT,
+        inbound_json   TEXT,
+        outbound_json  TEXT,
+        prompt_version INTEGER,
+        created_at     TEXT,
+        explain_text   TEXT
+    )
+""")
+_jpc_conn.commit()
+_jpc_conn.close()
 
 CAUTION_DIVERGENCE_THRESHOLD  = 15  # domain% - skills% > this → caution flag
 CROSS_COLLECTION_MIN_SKILLS   = 72  # hard floor — connections below this are excluded
@@ -379,15 +419,17 @@ def welcome_chat_llm(session_id: str, message: str) -> dict:
         print(f"[welcome_chat] Sonnet error: {e}", flush=True)
         return {"bot_response": None, "pivot_to_courses": False}
 
-    pivot = "[PIVOT_TO_COURSES]" in raw_text
-    bot_response = raw_text.replace("[PIVOT_TO_COURSES]", "").strip()
+    filter_match = re.search(r'\[FILTER:(\d+)\]', raw_text)
+    filter_code  = int(filter_match.group(1)) if filter_match else None
+    pivot        = "[PIVOT_TO_COURSES]" in raw_text
+    bot_response = re.sub(r'\[FILTER:\d+\]', '', raw_text).replace("[PIVOT_TO_COURSES]", "").strip()
 
     with _welcome_sessions_lock:
         sess["messages"].append({"role": "assistant", "content": bot_response})
         sess["interview_turn_count"] += 1
 
-    print(f"[welcome_chat] pivot={pivot} response={bot_response[:80]!r}", flush=True)
-    return {"bot_response": bot_response, "pivot_to_courses": pivot}
+    print(f"[welcome_chat] pivot={pivot} filter_code={filter_code} response={bot_response[:80]!r}", flush=True)
+    return {"bot_response": bot_response, "pivot_to_courses": pivot, "filter_code": filter_code}
 
 
 # ---------------------------------------------------------------------------
@@ -456,14 +498,14 @@ def salary_string(low, high, currency="GBP") -> str | None:
     return f"{symbol}{int(low):,} – {symbol}{int(high):,}"
 
 
-def gmiot_course_row(course_id: str) -> dict | None:
-    conn = sqlite3.connect(GMIOT_DB)
+def ff_course_row(course_id: str) -> dict | None:
+    conn = sqlite3.connect(FUTUREFINDER_DB)
     conn.row_factory = sqlite3.Row
     row = conn.execute(
-        "SELECT c.*, camp.postcode, camp.lat, camp.lng "
-        "FROM gmiot_courses c "
-        "LEFT JOIN campuses camp ON c.campus_id = camp.campus_id "
-        "WHERE c.course_id = ?", (course_id,)
+        "SELECT c.*, p.provider_name "
+        "FROM courses c "
+        "LEFT JOIN providers p ON c.provider_id = p.provider_id "
+        "WHERE c.course_id = ? AND c.is_active = 1", (course_id,)
     ).fetchone()
     conn.close()
     return dict(row) if row else None
@@ -482,16 +524,14 @@ def job_row(job_id: str) -> dict | None:
 
 
 def format_course_from_db(db: dict, match_score: int) -> dict:
-    """Build a course result dict from a gmiot_courses SQLite row (no Chroma metadata)."""
+    """Build a course result dict from a futurefinder.sqlite courses row."""
     return {
         "type":               "course",
         "id":                 str(db["course_id"]),
         "title":              db["course_title"],
-        "provider":           db["provider"],
-        "subject_area":       db.get("subject_area"),
+        "provider":           db.get("provider_name") or "",
         "level":              db.get("level"),
         "qualification_type": db.get("qual_type"),
-        "ssa_category":       db.get("ssa_label"),
         "source_url":         db.get("course_url"),
         "match_score":        match_score,
         "overview":           (db.get("overview") or "")[:500],
@@ -499,16 +539,17 @@ def format_course_from_db(db: dict, match_score: int) -> dict:
 
 
 def keyword_course_search(q: str, qualification: str | None) -> list[dict]:
-    """SQLite LIKE search on course_title in gmiot_courses. Returns exact-title matches first.
-    Only includes courses that have been embedded in Chroma (have an overview chunk)."""
-    conn = sqlite3.connect(GMIOT_DB)
+    """SQLite LIKE search on course_title in courses. Returns exact-title matches first."""
+    conn = sqlite3.connect(FUTUREFINDER_DB)
     conn.row_factory = sqlite3.Row
-    sql    = "SELECT * FROM gmiot_courses WHERE course_title LIKE ?"
+    sql = ("SELECT c.*, p.provider_name FROM courses c "
+           "LEFT JOIN providers p ON c.provider_id = p.provider_id "
+           "WHERE c.course_title LIKE ? AND c.is_active = 1")
     params: list = [f"%{q}%"]
     if qualification:
         qual_values = QUAL_FILTER_MAP.get(qualification, [qualification])
         placeholders = ",".join("?" * len(qual_values))
-        sql += f" AND qual_type IN ({placeholders})"
+        sql += f" AND c.qual_type IN ({placeholders})"
         params.extend(qual_values)
     rows = conn.execute(sql, params).fetchall()
     conn.close()
@@ -516,18 +557,10 @@ def keyword_course_search(q: str, qualification: str | None) -> list[dict]:
     if not rows:
         return []
 
-    # Filter to courses that have Chroma embeddings
-    candidate_ids = [str(dict(row)["course_id"]) for row in rows]
-    chroma_ids    = [f"{cid}_overview" for cid in candidate_ids]
-    stored        = courses_col.get(ids=chroma_ids, include=[])
-    embedded      = {sid.replace("_overview", "") for sid in stored["ids"]}
-
     q_lower = q.lower()
     results = []
     for row in rows:
-        db = dict(row)
-        if str(db["course_id"]) not in embedded:
-            continue
+        db    = dict(row)
         exact = db["course_title"].lower() == q_lower
         results.append(format_course_from_db(db, match_score=100 if exact else 95))
     results.sort(key=lambda r: 0 if r["match_score"] == 100 else 1)
@@ -699,10 +732,9 @@ def execute_specified_searches(
             all_job_hits.append(hits)
 
         if search_type in ("courses", "both"):
-            hits = courses_col.query(
+            hits = match_courses_col.query(
                 query_embeddings=[vector],
                 n_results=n_results,
-                where=course_where,
                 include=["metadatas", "distances", "documents"],
             )
             all_course_hits.append(hits)
@@ -743,19 +775,16 @@ def execute_specified_searches(
     # Build course candidates from all hits
     raw_course_candidates = []
     for hits in all_course_hits:
-        for meta, dist, ov_doc in zip(
-            hits["metadatas"][0], hits["distances"][0], hits["documents"][0],
+        for cid, meta, dist, ov_doc in zip(
+            hits["ids"][0], hits["metadatas"][0], hits["distances"][0], hits["documents"][0],
         ):
-            s   = score(dist)
-            cid = str(meta["course_id"])
-            print(f"[execute_searches] course: {meta.get('course_name')!r} score={s}", flush=True)
+            s = score(dist)
+            print(f"[execute_searches] course: {meta.get('title')!r} score={s}", flush=True)
             raw_course_candidates.append({
                 "type":               "course",
                 "id":                 cid,
-                "title":              meta.get("course_name", ""),
+                "title":              meta.get("title", ""),
                 "score":              s,
-                "qualification_type": meta.get("qualification_type", ""),
-                "level":              meta.get("level", ""),
                 "full_text":          ov_doc,
                 "_meta":              meta,
             })
@@ -1347,26 +1376,23 @@ def build_advisory_candidates(session_context: list, seen_ids: list) -> list:
         print(f"[advisory] job Chroma query failed: {e}", flush=True)
 
     try:
-        course_hits = courses_col.query(
+        course_hits = match_courses_col.query(
             query_embeddings=[vector],
             n_results=10,
-            where={"chunk": {"$eq": "overview"}},
             include=["metadatas", "distances", "documents"],
         )
-        for meta, dist, doc in zip(
-            course_hits["metadatas"][0], course_hits["distances"][0], course_hits["documents"][0],
+        for cid, meta, dist, doc in zip(
+            course_hits["ids"][0], course_hits["metadatas"][0],
+            course_hits["distances"][0], course_hits["documents"][0],
         ):
-            cid = str(meta["course_id"])
             if cid in seen_set:
                 continue
             candidates.append({
-                "type":               "course",
-                "id":                 cid,
-                "title":              meta.get("course_name", ""),
-                "score":              score(dist),
-                "qualification_type": meta.get("qualification_type", ""),
-                "level":              meta.get("level", ""),
-                "full_text":          doc[:300],
+                "type":      "course",
+                "id":        cid,
+                "title":     meta.get("title", ""),
+                "score":     score(dist),
+                "full_text": doc[:300],
             })
     except Exception as e:
         print(f"[advisory] course Chroma query failed: {e}", flush=True)
@@ -1537,11 +1563,11 @@ def check_advisory(session_context: list, session_id: str) -> dict | None:
         if sal:
             advisory["salary"] = sal
     else:
-        db = gmiot_course_row(advisory["id"])
+        db = ff_course_row(advisory["id"])
         if not db:
             return None
         advisory["title"]              = db["course_title"]
-        advisory["provider"]           = db["provider"]
+        advisory["provider"]           = db.get("provider_name") or ""
         advisory["qualification_type"] = db.get("qual_type")
         advisory["source_url"]         = db.get("course_url")
 
@@ -2034,23 +2060,23 @@ def api_welcome_data():
     counts — { display_label: { ssa_code: n } } aggregated across all raw
              qual_type values that map to each display label.
     """
-    conn = sqlite3.connect(GMIOT_DB)
+    conn = sqlite3.connect(FUTUREFINDER_DB)
     conn.row_factory = sqlite3.Row
     try:
         cur = conn.cursor()
 
         cur.execute("""
             SELECT DISTINCT CAST(ssa_code AS TEXT) AS ssa
-            FROM gmiot_courses
-            WHERE ssa_code IS NOT NULL
+            FROM courses
+            WHERE ssa_code IS NOT NULL AND is_active = 1
         """)
         ssa_codes = [r["ssa"] for r in cur.fetchall()]
 
         # Raw counts keyed by (qual_type, ssa_code) from the DB.
         cur.execute("""
             SELECT qual_type, CAST(ssa_code AS TEXT) AS ssa, COUNT(*) AS n
-            FROM gmiot_courses
-            WHERE qual_type IS NOT NULL AND ssa_code IS NOT NULL
+            FROM courses
+            WHERE qual_type IS NOT NULL AND ssa_code IS NOT NULL AND is_active = 1
             GROUP BY qual_type, ssa_code
         """)
         raw = {}
@@ -2082,20 +2108,21 @@ def search_courses():
 
     # Subject-tile path — direct SQLite lookup by SSA label, no embedding, no limit
     if subject:
-        ssa_label = SSA_MAP.get(subject)
-        if not ssa_label:
+        ssa_code = SSA_MAP.get(subject)
+        if not ssa_code:
             return jsonify({"subject": subject, "results": [], "message": "Unknown subject area."})
-
-        conn = sqlite3.connect(GMIOT_DB)
+        conn = sqlite3.connect(FUTUREFINDER_DB)
         conn.row_factory = sqlite3.Row
-        sql    = "SELECT * FROM gmiot_courses WHERE ssa_label = ? "
-        params: list = [ssa_label]
+        sql = ("SELECT c.*, p.provider_name FROM courses c "
+               "LEFT JOIN providers p ON c.provider_id = p.provider_id "
+               "WHERE c.ssa_code = ? AND c.is_active = 1")
+        params: list = [ssa_code]
         if qualification:
             qual_values  = QUAL_FILTER_MAP.get(qualification, [qualification])
             placeholders = ",".join("?" * len(qual_values))
-            sql += f"AND qual_type IN ({placeholders}) "
+            sql += f" AND c.qual_type IN ({placeholders})"
             params.extend(qual_values)
-        sql += "ORDER BY course_title"
+        sql += " ORDER BY c.course_title"
         rows = conn.execute(sql, params).fetchall()
         conn.close()
 
@@ -2119,26 +2146,19 @@ def search_courses():
 
     vector = embed(q)
 
-    where_clause = {"chunk": {"$eq": "overview"}}
-    if qualification:
-        where_clause = {"$and": [
-            {"chunk":              {"$eq": "overview"}},
-            {"qualification_type": {"$contains": qualification}},
-        ]}
-
-    hits = courses_col.query(
+    hits = match_courses_col.query(
         query_embeddings=[vector],
         n_results=100,
-        where=where_clause,
         include=["metadatas", "distances"],
     )
 
     vector_results = []
-    for meta, dist in zip(hits["metadatas"][0], hits["distances"][0]):
+    for cid, meta, dist in zip(hits["ids"][0], hits["metadatas"][0], hits["distances"][0]):
         s = score(dist)
         if s >= MIN_SCORE:
-            db = gmiot_course_row(meta["course_id"])
-            vector_results.append(format_course(meta, db, s))
+            db = ff_course_row(cid)
+            if db:
+                vector_results.append(format_course_from_db(db, s))
 
     # Keyword search on course titles — ensures title matches are never buried
     keyword_results = keyword_course_search(q, qualification or None)
@@ -2214,13 +2234,8 @@ def course_careers(course_id):
 
             if rows:
                 # Fetch course name for response
-                stored_meta = courses_col.get(
-                    ids=[f"{course_id}_overview"], include=["metadatas"]
-                )
-                course_name = (
-                    stored_meta["metadatas"][0].get("course_name")
-                    if stored_meta["ids"] else None
-                )
+                course_row_db = ff_course_row(str(course_id))
+                course_name   = course_row_db["course_title"] if course_row_db else None
 
                 results = []
                 for job_id, semantic_score, skills_score in rows:
@@ -2251,17 +2266,11 @@ def course_careers(course_id):
             print(f"[connections] table lookup failed ({e}) — falling back to live search", flush=True)
 
     # --- Live search fallback ---
-    # Lift the overview chunk vector — matches against job duties (overview chunks)
-    stored = courses_col.get(
-        ids=[f"{course_id}_overview"],
+    # Lift the stored vector from match_courses and query against jobs
+    stored = match_courses_col.get(
+        ids=[str(course_id)],
         include=["embeddings", "metadatas"],
     )
-    if not stored["ids"]:
-        # Fallback to skills chunk if no overview chunk
-        stored = courses_col.get(
-            ids=[f"{course_id}_skills"],
-            include=["embeddings", "metadatas"],
-        )
     if not stored["ids"]:
         return jsonify({"error": f"Course {course_id} not found in index"}), 404
 
@@ -2344,39 +2353,20 @@ def job_courses(job_id):
     vector   = stored["embeddings"][0]
     job_meta = stored["metadatas"][0]
 
-    hits = courses_col.query(
+    hits = match_courses_col.query(
         query_embeddings=[vector],
         n_results=limit,
-        where={"chunk": {"$eq": "overview"}},
         include=["metadatas", "distances"],
     )
 
     results = []
-    for meta, dist in zip(hits["metadatas"][0], hits["distances"][0]):
+    for cid, meta, dist in zip(hits["ids"][0], hits["metadatas"][0], hits["distances"][0]):
         s = score(dist)
-        if s >= MIN_SCORE:
-            cid          = str(meta["course_id"])
-            db           = gmiot_course_row(cid)
-            course       = format_course(meta, db, s)
-
-            if s < CROSS_COLLECTION_MIN_DOMAIN:
-                print(f"[caution] course {cid} -> job {job_id}: domain={s}% EXCLUDED (domain below floor)", flush=True)
-                continue
-
-            skills_score = compute_skills_score(cid, job_id)
-            sk_pct       = f"{skills_score}%" if skills_score is not None else "N/A"
-
-            if skills_score is None or skills_score < CROSS_COLLECTION_MIN_SKILLS:
-                print(f"[caution] course {cid} -> job {job_id}: domain={s}% skills={sk_pct} EXCLUDED (skills below floor)", flush=True)
-                continue
-
-            caution = (s - skills_score) > CAUTION_DIVERGENCE_THRESHOLD if skills_score is not None else False
-            course["skills_score"] = skills_score
-            course["caution"]      = caution
-
-            flag = "FLAGGED" if caution else "ok"
-            print(f"[caution] course {cid} -> job {job_id}: domain={s}% skills={sk_pct} d={s - (skills_score or s):+d}% {flag}", flush=True)
-
+        if s < 65:
+            continue
+        db     = ff_course_row(cid)
+        course = format_course_from_db(db, s) if db else None
+        if course:
             results.append(course)
 
     return jsonify({
@@ -2405,7 +2395,8 @@ def course_detail_ff(course_id):
         return jsonify({"error": f"Course {course_id} not found"}), 404
 
     pathways_row = conn.execute(
-        "SELECT narrative_short, narrative, card_jobs, curated_jobs "
+        "SELECT narrative_short, narrative, narrative_bullets, "
+        "card_jobs, curated_jobs, node_groups "
         "FROM course_career_pathways WHERE course_id = ?",
         (course_id,),
     ).fetchone()
@@ -2456,38 +2447,35 @@ def course_detail_ff(course_id):
         "entry_requirements": row["entry_requirements"] or "",
         "progression":        row["progression"] or "",
         "pathways": {
-            "narrative_short": pathways_row["narrative_short"] if pathways_row else "",
-            "narrative":       pathways_row["narrative"]       if pathways_row else "",
-            "card_jobs":       card_jobs_out,
-            "curated_jobs":    curated_jobs_out,
+            "narrative_short":   pathways_row["narrative_short"]   if pathways_row else "",
+            "narrative_bullets": pathways_row["narrative_bullets"] if pathways_row else None,
+            "card_jobs":         card_jobs_out,
+            "curated_jobs":      curated_jobs_out,
+            "node_groups":       json.loads(pathways_row["node_groups"])
+                                 if pathways_row and pathways_row["node_groups"] else None,
         } if pathways_row else None,
     })
 
 
 @app.get("/courses/<int:course_id>")
 def course_detail(course_id):
-    db = gmiot_course_row(str(course_id))
+    db = ff_course_row(str(course_id))
     if not db:
         return jsonify({"error": f"Course {course_id} not found"}), 404
     return jsonify({
-        "id":                   db["course_id"],
-        "title":                db["course_title"],
-        "provider":             db["provider"],
-        "subject_area":         db.get("subject_area"),
-        "level":                db.get("level"),
-        "qual_type":            db.get("qual_type"),
-        "mode":                 db.get("mode"),
-        "course_url":           db.get("course_url"),
-        "ssa_code":             db.get("ssa_code"),
-        "ssa_label":            db.get("ssa_label"),
-        "campus_name":          db.get("campus_name") or "",
-        "postcode":             db.get("postcode") or "",
-        "lat":                  db.get("lat"),
-        "lng":                  db.get("lng"),
-        "overview":             db.get("overview") or "",
-        "what_you_will_learn":  db.get("what_you_will_learn") or "",
-        "entry_requirements":   db.get("entry_requirements") or "",
-        "progression":          db.get("progression") or "",
+        "id":                  db["course_id"],
+        "title":               db["course_title"],
+        "provider":            db.get("provider_name") or "",
+        "level":               db.get("level"),
+        "qual_type":           db.get("qual_type"),
+        "mode":                db.get("mode"),
+        "campus":              db.get("campus") or "",
+        "course_url":          db.get("course_url"),
+        "ssa_code":            db.get("ssa_code"),
+        "overview":            db.get("overview") or "",
+        "content":             db.get("content") or "",
+        "entry_requirements":  db.get("entry_requirements") or "",
+        "progression":         db.get("progression") or "",
     })
 
 
@@ -2744,42 +2732,140 @@ def job_explain(job_id):
 
 @app.post("/saved/campuses")
 def saved_campuses():
-    """Return deduplicated campus data (with coordinates) for a list of saved course IDs."""
+    """Return deduplicated campus data (with coordinates) for a list of saved course IDs.
+
+    Each entry: {provider, campus_name, postcode, lat, lng, courses: [title, ...]}.
+    Matches course.campus to campuses.campus_name by substring; falls back to
+    the provider's Main Campus, then the provider's first campus.
+    """
     body       = request.get_json(force=True) or {}
     course_ids = body.get("course_ids", [])
     if not course_ids:
         return jsonify([])
 
-    placeholders = ",".join("?" * len(course_ids))
-    conn = sqlite3.connect(GMIOT_DB)
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        f"SELECT c.course_id, c.course_title, c.provider, c.campus_name, "
-        f"camp.lat, camp.lng, camp.postcode "
-        f"FROM gmiot_courses c "
-        f"JOIN campuses camp ON c.campus_id = camp.campus_id "
-        f"WHERE c.course_id IN ({placeholders}) "
-        f"AND camp.lat IS NOT NULL AND camp.lng IS NOT NULL",
-        [int(i) for i in course_ids]
-    ).fetchall()
-    conn.close()
+    try:
+        conn = sqlite3.connect(FUTUREFINDER_DB)
+        conn.row_factory = sqlite3.Row
 
-    # Deduplicate by campus (lat/lng), aggregating course titles
-    campus_map = {}
-    for row in rows:
-        key = (row["lat"], row["lng"])
-        if key not in campus_map:
-            campus_map[key] = {
-                "provider":    row["provider"],
-                "campus_name": row["campus_name"],
-                "postcode":    row["postcode"],
-                "lat":         row["lat"],
-                "lng":         row["lng"],
+        placeholders = ",".join("?" * len(course_ids))
+        courses = conn.execute(
+            f"SELECT c.course_id, c.course_title, c.campus, c.provider_id, p.provider_name "
+            f"FROM courses c JOIN providers p ON c.provider_id = p.provider_id "
+            f"WHERE c.course_id IN ({placeholders})",
+            course_ids,
+        ).fetchall()
+
+        # Load all campuses for relevant providers
+        provider_ids = list({c["provider_id"] for c in courses})
+        p_placeholders = ",".join("?" * len(provider_ids))
+        all_campuses = conn.execute(
+            f"SELECT campus_id, provider_id, campus_name, postcode, lat, lng "
+            f"FROM campuses WHERE provider_id IN ({p_placeholders})",
+            provider_ids,
+        ).fetchall()
+        conn.close()
+    except Exception as e:
+        print(f"[saved/campuses] error: {e}", flush=True)
+        return jsonify([])
+
+    # Index campuses by provider_id
+    by_provider: dict[int, list] = {}
+    for cam in all_campuses:
+        by_provider.setdefault(cam["provider_id"], []).append(cam)
+
+    def best_campus(course_campus: str, provider_id: int):
+        candidates = by_provider.get(provider_id, [])
+        if not candidates:
+            return None
+        if course_campus:
+            cc = course_campus.lower()
+            # substring match either way
+            for cam in candidates:
+                cn = cam["campus_name"].lower()
+                if cn in cc or cc in cn:
+                    return cam
+        # fallback: Main Campus, then first
+        for cam in candidates:
+            if cam["campus_name"].lower() == "main campus":
+                return cam
+        return candidates[0]
+
+    # Map campus_id → {meta, courses[]}
+    campus_map: dict[int, dict] = {}
+    for course in courses:
+        cam = best_campus(course["campus"], course["provider_id"])
+        if not cam:
+            continue
+        cid = cam["campus_id"]
+        if cid not in campus_map:
+            campus_map[cid] = {
+                "provider":    course["provider_name"],
+                "campus_name": cam["campus_name"],
+                "postcode":    cam["postcode"],
+                "lat":         cam["lat"],
+                "lng":         cam["lng"],
                 "courses":     [],
             }
-        campus_map[key]["courses"].append(row["course_title"])
+        if course["course_title"] not in campus_map[cid]["courses"]:
+            campus_map[cid]["courses"].append(course["course_title"])
 
     return jsonify(list(campus_map.values()))
+
+
+def get_sample_courses() -> dict:
+    """One random active course per SSA code — used for the 'Show me some ideas' sampler."""
+    try:
+        conn = sqlite3.connect(FUTUREFINDER_DB)
+        conn.row_factory = sqlite3.Row
+        codes = [r[0] for r in conn.execute(
+            'SELECT DISTINCT ssa_code FROM courses WHERE ssa_code IS NOT NULL AND is_active=1 ORDER BY ssa_code'
+        ).fetchall()]
+        courses = []
+        for code in codes:
+            row = conn.execute(
+                'SELECT course_id, course_title, preview FROM courses '
+                'WHERE ssa_code=? AND is_active=1 ORDER BY RANDOM() LIMIT 1',
+                (code,)
+            ).fetchone()
+            if row:
+                courses.append({
+                    "course_id":    row["course_id"],
+                    "course_title": row["course_title"],
+                    "preview_text": (row["preview"] or "")[:200].rstrip(),
+                })
+        conn.close()
+    except Exception as e:
+        print(f"[sample_courses] error: {e}", flush=True)
+        return {"intro_text": "Here are some courses from across our subject areas.", "courses": []}
+    return {
+        "intro_text": "Here's a taster — one course from each subject area at GMIoT.",
+        "courses": courses,
+    }
+
+
+def get_filtered_courses(ssa_code: int) -> dict:
+    """All active courses for a given SSA code, sorted by title."""
+    try:
+        conn = sqlite3.connect(FUTUREFINDER_DB)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            'SELECT course_id, course_title, preview FROM courses '
+            'WHERE ssa_code=? AND is_active=1 ORDER BY course_title',
+            (ssa_code,)
+        ).fetchall()
+        conn.close()
+        courses = [
+            {
+                "course_id":    r["course_id"],
+                "course_title": r["course_title"],
+                "preview_text": (r["preview"] or "")[:200].rstrip(),
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"[filtered_courses] ssa_code={ssa_code} error: {e}", flush=True)
+        return {"intro_text": "Here are the courses in that area.", "courses": []}
+    return {"intro_text": "Here are all the courses in that subject area at GMIoT.", "courses": courses}
 
 
 def retrieve_courses_for_pivot(session_id: str) -> dict:
@@ -2815,12 +2901,11 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
         print(f"[pivot_retrieval] embed error: {e}", flush=True)
         return _empty
 
-    # Chroma — overview chunks only, top 15
+    # Chroma — match_courses collection (one chunk per course, futurefinder IDs)
     try:
-        hits = courses_col.query(
+        hits = match_courses_col.query(
             query_embeddings=[vector],
             n_results=15,
-            where={"chunk": {"$eq": "overview"}},
             include=["metadatas", "distances", "documents"],
         )
     except Exception as e:
@@ -2828,13 +2913,13 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
         return _empty
 
     candidates = []
-    for meta, dist, doc in zip(
-        hits["metadatas"][0], hits["distances"][0], hits["documents"][0]
+    for cid, meta, dist, doc in zip(
+        hits["ids"][0], hits["metadatas"][0], hits["distances"][0], hits["documents"][0]
     ):
         candidates.append({
-            "course_id": int(meta["course_id"]),
-            "title":     meta.get("course_name", ""),
-            "qual_type": meta.get("qualification_type", ""),
+            "course_id": int(cid),
+            "title":     meta.get("title", ""),
+            "qual_type": "",
             "level":     meta.get("level", ""),
             "preview":   (doc or "")[:300],
         })
@@ -2903,10 +2988,10 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
     if int_ids:
         placeholders = ",".join("?" * len(int_ids))
         try:
-            conn = sqlite3.connect(GMIOT_DB)
+            conn = sqlite3.connect(FUTUREFINDER_DB)
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                f"SELECT course_id, course_title, overview FROM gmiot_courses "
+                f"SELECT course_id, course_title, preview FROM courses "
                 f"WHERE course_id IN ({placeholders})",
                 int_ids,
             ).fetchall()
@@ -2922,7 +3007,7 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
         cand    = id_to_cand[cid]
         db_row  = db_map.get(cid)
         title   = db_row["course_title"] if db_row else cand["title"]
-        preview = ((db_row["overview"] or "") if db_row else cand["preview"])[:200].rstrip()
+        preview = ((db_row["preview"] or "") if db_row else cand["preview"])[:200].rstrip()
         courses_out.append({
             "course_id":    int(cid),
             "course_title": title,
@@ -2944,18 +3029,31 @@ def chat_welcome():
     if not session_id:
         return jsonify({"error": "session_id is required"}), 400
 
+    # Keyword shortcut — bypass Sonnet, return one course per SSA area
+    if message.lower() == "show me some ideas":
+        return jsonify({
+            "session_id":       session_id,
+            "bot_response":     "Here's a taster of what GMIoT has to offer — one course from each subject area. See anything that appeals?",
+            "pivot_to_courses": True,
+            "course_list":      get_sample_courses(),
+        })
+
     result = welcome_chat_llm(session_id, message)
     if result["bot_response"] is None:
         return jsonify({"error": "llm_error"}), 502
 
+    pivot       = result["pivot_to_courses"]
     course_list = None
-    if result["pivot_to_courses"]:
+    if result.get("filter_code"):
+        course_list = get_filtered_courses(result["filter_code"])
+        pivot = True
+    elif pivot:
         course_list = retrieve_courses_for_pivot(session_id)
 
     return jsonify({
         "session_id":       session_id,
         "bot_response":     result["bot_response"],
-        "pivot_to_courses": result["pivot_to_courses"],
+        "pivot_to_courses": pivot,
         "course_list":      course_list,
     })
 
@@ -3102,12 +3200,11 @@ def chat():
         results.append(job)
 
     for c in course_candidates:
-        cid  = c["id"]
-        meta = course_meta_by_id.get(cid)
-        if not meta:
+        cid = c["id"]
+        db  = ff_course_row(cid)
+        if not db:
             continue
-        db = gmiot_course_row(cid)
-        results.append(format_course(meta, db, course_score_by_id[cid]))
+        results.append(format_course_from_db(db, course_score_by_id.get(cid, 0)))
 
     if not results:
         ack = "I couldn't find anything relevant to that — try a different topic."

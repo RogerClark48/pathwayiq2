@@ -8,7 +8,7 @@ input  { font: inherit; border: none; outline: none; background: none; }
 /* ── Design tokens ───────────────────────────────────────────────────────── */
 :root {
   --c-brand:    #1A237E;   /* GMIoT navy */
-  --c-yellow:   #FFD600;   /* background */
+  --c-yellow:   #FFFBC0;   /* background */
   --c-teal:     #00897B;   /* LLM response, teal actions */
   --c-amber:    #F57C00;   /* advisory, qual pills */
   --c-white:    #FFFFFF;
@@ -49,11 +49,16 @@ body {
 
 .header-logo {
   position: absolute;
-  left: 12px;
+  left: 2px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  border-radius: 6px;
+  padding: 2px 2px;
+  transition: opacity 0.15s;
 }
+
+.header-logo:hover { opacity: 0.75; }
 
 .header-logo-img {
   height: 32px;
@@ -71,8 +76,8 @@ body {
 }
 
 .header-gmiot {
-  height: 28px;
-  width: 98px; /* 28 × (230/69) */
+  height: 45px;
+  width: 134px; /* 28 × (230/69) */
   flex-shrink: 0;
 }
 
@@ -764,10 +769,28 @@ body {
   background: rgba(26,35,126,0.06);
 }
 
+/* CTA button shown after LLM pivots to results */
+.chat-cta-btn {
+  display: block;
+  margin: 4px 0 12px auto;
+  background: var(--c-teal);
+  color: var(--c-white);
+  border: none;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 22px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.chat-cta-btn:hover { opacity: 0.88; }
+
 /* Input area — pinned to bottom, no background (yellow shows through) */
 .chat-input-area {
   flex-shrink: 0;
   padding: 10px 14px 24px;
+  border-top: 1px solid #e5e7eb;
 }
 
 .chat-input-box {
@@ -1014,15 +1037,20 @@ body {
   white-space: pre-line;
 }
 
+.cd-body + .cd-body {
+  margin-top: 10px;
+}
+
 /* Expand toggles */
 .cd-expand-btn {
   align-self: flex-start;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--c-brand);
-  border-bottom: 1.5px solid var(--c-brand);
-  padding: 0 0 1px;
-  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-white);
+  background: var(--c-teal);
+  border-radius: 999px;
+  padding: 5px 14px;
+  margin-top: 8px;
 }
 
 /* Course URL */
@@ -1058,6 +1086,13 @@ body {
   border: 1.5px solid var(--c-brand);
   border-radius: 20px;
   padding: 4px 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.cd-job-pill:hover {
+  background: var(--c-brand);
+  color: var(--c-white);
 }
 
 /* Job cards (full pathways) */
@@ -1083,9 +1118,352 @@ body {
   line-height: 1.45;
 }
 
+/* Bullet narrative */
+.cd-bullets {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.cd-bullet-item {
+  font-size: 13px;
+  color: var(--c-text);
+  line-height: 1.5;
+  padding-left: 14px;
+  position: relative;
+}
+
+.cd-bullet-item::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--c-teal);
+  font-weight: 700;
+}
+
+/* Network diagram */
+.cd-network-hint {
+  font-size: 12px;
+  color: var(--c-muted);
+  text-align: center;
+  margin-top: 4px;
+}
+
+.cd-reasoning-panel {
+  background: var(--c-white);
+  border: 1.5px solid var(--c-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cd-reasoning-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--c-teal);
+}
+
+.cd-reasoning-title--link {
+  text-align: left;
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.cd-reasoning-title--link:hover {
+  text-decoration: underline;
+}
+
+.cd-reasoning-text {
+  font-size: 13px;
+  color: var(--c-text);
+  line-height: 1.5;
+}
+
 .cd-pathways {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
+/* ── Job detail view ─────────────────────────────────────────────────────── */
+
+.jd-source-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  padding: 2px 7px;
+  margin-top: 4px;
+  align-self: flex-start;
+}
+
+.jd-source-badge--ncs {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.jd-source-badge--prospects {
+  background: #E3F2FD;
+  color: #1565C0;
+}
+
+.jd-salary {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-teal);
+  margin-top: 6px;
+}
+
+/* Career trajectory */
+.jd-traj-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+.jd-role-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.jd-role-pill {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-brand);
+  background: var(--c-white);
+  border: 1.5px solid var(--c-brand);
+  border-radius: 20px;
+  padding: 5px 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.jd-role-pill:hover {
+  background: var(--c-brand);
+  color: var(--c-white);
+}
+
+/* Courses list */
+.jd-course-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.jd-course-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--c-white);
+  border: 1.5px solid var(--c-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.jd-course-item:hover {
+  border-color: var(--c-brand);
+}
+
+.jd-course-item--active {
+  border-color: var(--c-teal);
+  background: #F0FAFA;
+}
+
+.jd-course-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-brand);
+}
+
+.jd-course-meta {
+  font-size: 12px;
+  color: var(--c-muted);
+}
+
+/* Course preview panel */
+.jd-course-preview {
+  background: var(--c-white);
+  border: 1.5px solid var(--c-teal);
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jd-course-preview-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-brand);
+}
+
+.jd-course-preview-save {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-teal);
+  background: none;
+  border: 1.5px solid var(--c-teal);
+  border-radius: 999px;
+  padding: 4px 14px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.jd-course-preview-save--saved {
+  background: var(--c-teal);
+  color: var(--c-white);
+}
+
+.cd-muted {
+  color: var(--c-muted);
+}
+
+
+/* ── Saved list view ────────────────────────────────────────────────────── */
+
+.view-saved-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-bottom: 40px;
+}
+
+.saved-list-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 0;
+}
+
+.saved-list-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--c-brand);
+  flex-shrink: 0;
+}
+
+.saved-list-close:hover { background: rgba(26,35,126,0.08); }
+
+.saved-list-heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-brand);
+}
+
+.saved-list-empty {
+  font-size: 14px;
+  color: var(--c-muted);
+  padding: 24px 20px;
+  line-height: 1.5;
+}
+
+.saved-section {
+  margin-top: 16px;
+}
+
+.saved-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  padding: 0 16px 6px;
+  margin: 0;
+}
+
+.saved-rows {
+  border-top: 1px solid var(--c-border);
+}
+
+.saved-row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--c-border);
+  min-height: 52px;
+}
+
+.saved-row-title {
+  flex: 1;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-brand);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 12px 8px 12px 16px;
+  line-height: 1.3;
+}
+
+.saved-row-title:active { background: rgba(26,35,126,0.04); }
+
+.saved-row-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--c-muted);
+  margin-right: 4px;
+}
+
+.saved-row-remove:hover { color: var(--c-brand); }
+
+.saved-map-wrap {
+  padding: 16px 16px 0;
+}
+
+.saved-map {
+  width: 100%;
+  height: 240px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+}
+
+/* ── Course detail notices ───────────────────────────────────────────────── */
+
+.cd-notice {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin: 12px 0 4px;
+}
+
+.cd-notice--apprenticeship {
+  background: #FFF8E1;
+  border-left: 3px solid var(--c-amber);
+  color: #5D4037;
+}
