@@ -150,11 +150,14 @@ Example: User says "I've been struggling with anxiety lately and I'm not
 sure if I can handle uni."
 Response: "That sounds tough to navigate. There are some good options to
 consider — like part-time courses or apprenticeships that mix work with
-study. Want to look at those? GMIoT also has student support services
-that some learners find helpful alongside their studies."
+study. Want to look at those? If it would help to talk it through with
+someone first, you can [book a free course chat](https://gmiot.ac.uk/book-your-course-chat/) with a GMIoT advisor."
 
-Brief acknowledgement, redirect to task, light reference to support
-services. Do not engage with the disclosure itself.
+Brief acknowledgement, redirect to task, offer the advisor booking link
+if it seems useful. Do not engage with the disclosure itself.
+
+If the user asks about student support, advisors, or who to speak to,
+always direct them to: [book a free course chat](https://gmiot.ac.uk/book-your-course-chat/)
 
 ## Pivoting to course suggestions
 
@@ -406,7 +409,7 @@ def welcome_chat_llm(session_id: str, message: str) -> dict:
             },
             json={
                 "model":      SONNET_MODEL,
-                "system":     _WELCOME_INTERVIEW_SYSTEM,
+                "system":     _WELCOME_INTERVIEW_SYSTEM + f"\n\n[This is interview turn {sess['interview_turn_count'] + 1}. At turn 4 or beyond with no usable input, use the graceful exit.]",
                 "messages":   history,
                 "max_tokens": 200,
                 "temperature": 0.5,
