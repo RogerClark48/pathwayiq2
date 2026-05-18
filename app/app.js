@@ -3,6 +3,7 @@
 import { state } from './state.js';
 import { register, go } from './router.js';
 import { loadWelcomeData } from './api.js';
+import { logEvent } from './analytics.js';
 import { WelcomeView }    from './views/welcome.js';
 import { EditView }       from './views/edit.js';
 import { StartView }      from './views/start.js';
@@ -29,6 +30,7 @@ function updateBadge() {
 document.addEventListener('DOMContentLoaded', () => {
   loadWelcomeData(); // kick fetch immediately — welcome view reuses the same promise
   updateBadge();
+  logEvent('session_start');
   go('chat-first');
 
   document.getElementById('btn-home').addEventListener('click', () => go('chat-first'));

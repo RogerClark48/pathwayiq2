@@ -2,6 +2,7 @@
 
 import { state } from '../state.js';
 import { go }    from '../router.js';
+import { logEvent } from '../analytics.js';
 
 export function CourseListView() {
   const data    = state.courseList;
@@ -61,6 +62,7 @@ export function CourseListView() {
 
     row.appendChild(titleEl);
     row.appendChild(previewEl);
+    logEvent('course_impression', 'course', course.course_id, course.course_title);
     row.addEventListener('click', () => go('course-detail', {
       courseId:    course.course_id,
       courseTitle: course.course_title,

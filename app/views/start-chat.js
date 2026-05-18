@@ -3,6 +3,7 @@
 import { state, submitMessage, setWaiting, setCourseList } from '../state.js';
 import { postWelcomeChat } from '../api.js';
 import { go } from '../router.js';
+import { logEvent } from '../analytics.js';
 
 const WELCOME_TEXT =
   "Hi — I'm here to help you find a course at the Greater Manchester " +
@@ -142,6 +143,7 @@ export function StartChatView() {
     // Remove starter chips permanently on first user message.
     if (starterEl) { starterEl.remove(); starterEl = null; }
 
+    logEvent('chat_submit', null, null, null, { query: text });
     submitMessage(text);
     messagesEl.appendChild(makeBubble('user', text));
     chatInput.value = '';

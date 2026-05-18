@@ -2,6 +2,7 @@
 
 import { go }                       from '../router.js';
 import { state, saveItem, unsaveItem, isSaved } from '../state.js';
+import { logEvent } from '../analytics.js';
 
 const BOOKMARK_EMPTY = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
@@ -253,6 +254,8 @@ export function CourseDetailView(slices = {}) {
   content.innerHTML = '<p class="cd-loading">Loading…</p>';
   el.appendChild(content);
 
+  logEvent('course_detail_open', 'course', courseId, courseTitle);
+
   fetch(`/courses/${courseId}/detail`)
     .then(r => {
       if (!r.ok) throw new Error(`/courses/${courseId}/detail ${r.status}`);
@@ -376,9 +379,10 @@ function renderDetail(content, d, backRoute) {
     if (d.pathways.card_jobs?.length) {
       const pillsEl = document.createElement('div');
       pillsEl.className = 'cd-job-pills';
-      d.pathways.card_jobs.forEach(j =>
-        pillsEl.appendChild(jobPill(j, d.course_id, d.course_title, backRoute))
-      );
+      d.pathways.card_jobs.forEach(j => {
+        logEvent('career_impression', 'job', j.job_id, j.title);
+        pillsEl.appendChild(jobPill(j, d.course_id, d.course_title, backRoute));
+      });
       briefEl.appendChild(pillsEl);
     }
 
