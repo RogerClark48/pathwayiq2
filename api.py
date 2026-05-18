@@ -312,6 +312,49 @@ CROSS_COLLECTION_MIN_SKILLS   = 72  # hard floor — connections below this are 
 CROSS_COLLECTION_MIN_DOMAIN   = 75  # hard floor — low domain score connections excluded
 
 # ---------------------------------------------------------------------------
+# Anthropic API wrapper — rate-limit detection and logging
+# ---------------------------------------------------------------------------
+
+class RateLimitError(Exception):
+    pass
+
+
+def _anthropic_post(payload: dict, call_site: str, session_id: str | None = None, timeout: float = 30.0):
+    """POST to Anthropic API. Raises RateLimitError on 429; raises for other HTTP errors."""
+    resp = httpx.post(
+        ANTHROPIC_URL,
+        headers={
+            "x-api-key":         ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type":      "application/json",
+        },
+        json=payload,
+        timeout=timeout,
+    )
+    if resp.status_code == 429:
+        retry_after = resp.headers.get("retry-after", "?")
+        print(f"[RATE_LIMIT] call_site={call_site} retry_after={retry_after}s session={str(session_id or '')[:8]}", flush=True)
+        try:
+            conn = sqlite3.connect(ANALYTICS_DB)
+            conn.execute(
+                "INSERT INTO events (session_id, ts, event, meta) VALUES (?, ?, ?, ?)",
+                (
+                    session_id or "system",
+                    datetime.utcnow().isoformat(),
+                    "rate_limit",
+                    json.dumps({"call_site": call_site, "retry_after": retry_after}),
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        raise RateLimitError(call_site)
+    resp.raise_for_status()
+    return resp
+
+
+# ---------------------------------------------------------------------------
 # Per-user session store
 # ---------------------------------------------------------------------------
 _sessions      = {}
@@ -400,24 +443,16 @@ def welcome_chat_llm(session_id: str, message: str) -> dict:
           f"msg={message!r}", flush=True)
 
     try:
-        resp = httpx.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key":         ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json",
-            },
-            json={
-                "model":      SONNET_MODEL,
-                "system":     _WELCOME_INTERVIEW_SYSTEM + f"\n\n[This is interview turn {sess['interview_turn_count'] + 1}. At turn 4 or beyond with no usable input, use the graceful exit.]",
-                "messages":   history,
-                "max_tokens": 200,
-                "temperature": 0.5,
-            },
-            timeout=30.0,
-        )
-        resp.raise_for_status()
+        resp = _anthropic_post({
+            "model":      SONNET_MODEL,
+            "system":     _WELCOME_INTERVIEW_SYSTEM + f"\n\n[This is interview turn {sess['interview_turn_count'] + 1}. At turn 4 or beyond with no usable input, use the graceful exit.]",
+            "messages":   history,
+            "max_tokens": 200,
+            "temperature": 0.5,
+        }, call_site="welcome_chat", session_id=session_id)
         raw_text = resp.json()["content"][0]["text"].strip()
+    except RateLimitError:
+        return {"bot_response": "The service is very busy right now — please try again in a moment.", "pivot_to_courses": False}
     except Exception as e:
         print(f"[welcome_chat] Sonnet error: {e}", flush=True)
         return {"bot_response": None, "pivot_to_courses": False}
@@ -955,23 +990,15 @@ def chat_explain(message: str, chat_history: list, max_tokens: int = 300) -> str
     messages = [{"role": m["role"], "content": m["content"]} for m in chat_history]
     messages.append({"role": "user", "content": message})
     try:
-        resp = httpx.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key":         ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json",
-            },
-            json={
-                "model":      HAIKU_MODEL,
-                "max_tokens": max_tokens,
-                "system":     _EXPLAIN_SYSTEM,
-                "messages":   messages,
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
+        resp = _anthropic_post({
+            "model":      HAIKU_MODEL,
+            "max_tokens": max_tokens,
+            "system":     _EXPLAIN_SYSTEM,
+            "messages":   messages,
+        }, call_site="chat_explain")
         return resp.json()["content"][0]["text"].strip()
+    except RateLimitError:
+        return "The service is very busy right now — please try again in a moment."
     except Exception as e:
         print(f"[chat_explain] FAILED — {e}", flush=True)
         return "I'm not able to answer that right now — try exploring the subject areas or qualifications above."
@@ -1143,28 +1170,20 @@ def chat_specify_searches(
     user_prompt = f'User query: "{message}"{context_block}'
 
     try:
-        resp = httpx.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key":         ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json",
-            },
-            json={
-                "model":       HAIKU_MODEL,
-                "max_tokens":  512,
-                "system":      _SPECIFY_SEARCHES_SYSTEM,
-                "tools":       [_SPECIFY_SEARCHES_TOOL],
-                "tool_choice": {"type": "tool", "name": "specify_searches"},
-                "messages":    [{"role": "user", "content": user_prompt}],
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
+        resp = _anthropic_post({
+            "model":       HAIKU_MODEL,
+            "max_tokens":  512,
+            "system":      _SPECIFY_SEARCHES_SYSTEM,
+            "tools":       [_SPECIFY_SEARCHES_TOOL],
+            "tool_choice": {"type": "tool", "name": "specify_searches"},
+            "messages":    [{"role": "user", "content": user_prompt}],
+        }, call_site="specify_searches")
         data = resp.json()
         turn1_content = data["content"]
         spec = turn1_content[0]["input"]
         return spec, turn1_content, user_prompt
+    except RateLimitError:
+        return "rate_limited", None, None
     except Exception as e:
         print(f"[specify_searches] FAILED — {e}", flush=True)
         return None, None, None
@@ -1268,30 +1287,22 @@ def chat_select_results(
         }
     ]
     try:
-        resp = httpx.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key":         ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json",
-            },
-            json={
-                "model":       HAIKU_MODEL,
-                "max_tokens":  512,
-                "system":      _SELECT_RESULTS_SYSTEM,
-                "tools":       [_SELECT_RESULTS_TOOL],
-                "tool_choice": {"type": "tool", "name": "select_results"},
-                "messages": [
-                    {"role": "user",      "content": turn1_user_prompt},
-                    {"role": "assistant", "content": turn1_content},
-                    {"role": "user",      "content": turn2_user_content},
-                ],
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
+        resp = _anthropic_post({
+            "model":       HAIKU_MODEL,
+            "max_tokens":  512,
+            "system":      _SELECT_RESULTS_SYSTEM,
+            "tools":       [_SELECT_RESULTS_TOOL],
+            "tool_choice": {"type": "tool", "name": "select_results"},
+            "messages": [
+                {"role": "user",      "content": turn1_user_prompt},
+                {"role": "assistant", "content": turn1_content},
+                {"role": "user",      "content": turn2_user_content},
+            ],
+        }, call_site="select_results")
         selection = resp.json()["content"][0]["input"]
         return selection
+    except RateLimitError:
+        return None
     except Exception as e:
         print(f"[select_results] FAILED — {e}", flush=True)
         return None
@@ -1451,24 +1462,14 @@ def advisory_llm_call(session_context: list, candidates: list) -> dict | None:
     )
 
     try:
-        resp = httpx.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key":         ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json",
-            },
-            json={
-                "model":       SONNET_MODEL,
-                "max_tokens":  300,
-                "system":      system_prompt,
-                "tools":       [_ADVISORY_TOOL],
-                "tool_choice": {"type": "tool", "name": "submit_advisory_decision"},
-                "messages":    [{"role": "user", "content": user_prompt}],
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
+        resp = _anthropic_post({
+            "model":       SONNET_MODEL,
+            "max_tokens":  300,
+            "system":      system_prompt,
+            "tools":       [_ADVISORY_TOOL],
+            "tool_choice": {"type": "tool", "name": "submit_advisory_decision"},
+            "messages":    [{"role": "user", "content": user_prompt}],
+        }, call_site="advisory_llm")
         result      = resp.json()["content"][0]["input"]
         item_type   = result.get("advisory_item_type", "none")
         item_id     = (result.get("advisory_item_id") or "").strip()
@@ -1479,6 +1480,8 @@ def advisory_llm_call(session_context: list, candidates: list) -> dict | None:
         if item_type == "none" or not item_id:
             return None
         return {"type": item_type, "id": item_id, "explanation": explanation}
+    except RateLimitError:
+        return None
     except Exception as e:
         print(f"[advisory_llm] Sonnet call failed ({e}) — skipping", flush=True)
         return None
@@ -1677,24 +1680,14 @@ def chat_llm_call(message: str, candidates: list,
     print(f"[chat_llm] user_prompt=\n{user_prompt}", flush=True)
 
     try:
-        resp = httpx.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key":         ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json",
-            },
-            json={
-                "model":       HAIKU_MODEL,
-                "max_tokens":  1000,
-                "system":      system_prompt,
-                "tools":       [_CHAT_TOOL],
-                "tool_choice": {"type": "tool", "name": "submit_chat_result"},
-                "messages":    chat_history + [{"role": "user", "content": user_prompt}],
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
+        resp = _anthropic_post({
+            "model":       HAIKU_MODEL,
+            "max_tokens":  1000,
+            "system":      system_prompt,
+            "tools":       [_CHAT_TOOL],
+            "tool_choice": {"type": "tool", "name": "submit_chat_result"},
+            "messages":    chat_history + [{"role": "user", "content": user_prompt}],
+        }, call_site="chat_llm")
         result           = resp.json()["content"][0]["input"]
         approved_jobs    = [str(x) for x in result.get("approved_job_ids", [])]
         approved_courses = [str(x) for x in result.get("approved_course_ids", [])]
@@ -1702,6 +1695,8 @@ def chat_llm_call(message: str, candidates: list,
         is_off_topic     = bool(result.get("is_off_topic", False))
         print(f"[chat_llm] tool call received — approved_jobs={approved_jobs} approved_courses={approved_courses}", flush=True)
         return approved_jobs, approved_courses, ack, is_off_topic
+    except RateLimitError:
+        return [], [], "The service is very busy right now — please try again in a moment.", False
     except Exception as e:
         print(f"[chat_llm] API call failed ({e}) — approving all", flush=True)
         approved_jobs    = [c["id"] for c in candidates if c["type"] == "job"]
@@ -2620,22 +2615,12 @@ def job_progression(job_id):
 
     # Step 5 — Call Sonnet
     try:
-        resp = httpx.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key":         ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json",
-            },
-            json={
-                "model":      SONNET_MODEL,
-                "max_tokens": 1500,
-                "system":     PROGRESSION_SYSTEM_PROMPT,
-                "messages":   [{"role": "user", "content": user_prompt}],
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
+        resp = _anthropic_post({
+            "model":      SONNET_MODEL,
+            "max_tokens": 1500,
+            "system":     PROGRESSION_SYSTEM_PROMPT,
+            "messages":   [{"role": "user", "content": user_prompt}],
+        }, call_site="progression", timeout=60.0)
         result_text = resp.json()["content"][0]["text"].strip()
         # Strip markdown code fences if present
         if result_text.startswith("```"):
@@ -2643,6 +2628,9 @@ def job_progression(job_id):
             if result_text.endswith("```"):
                 result_text = result_text[:-3].rstrip()
         result = json.loads(result_text)
+    except RateLimitError:
+        jobs_conn.close()
+        return jsonify({"has_progression": False})
     except Exception as e:
         print(f"[progression] Sonnet call failed ({e})", flush=True)
         jobs_conn.close()
@@ -2950,24 +2938,14 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
 
     # Haiku tool-use selection
     try:
-        resp = httpx.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key":         ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json",
-            },
-            json={
-                "model":       HAIKU_MODEL,
-                "max_tokens":  300,
-                "temperature": 0.3,
-                "tools":       [_SELECT_COURSES_TOOL],
-                "tool_choice": {"type": "tool", "name": "select_courses"},
-                "messages":    [{"role": "user", "content": haiku_msg}],
-            },
-            timeout=20.0,
-        )
-        resp.raise_for_status()
+        resp = _anthropic_post({
+            "model":       HAIKU_MODEL,
+            "max_tokens":  300,
+            "temperature": 0.3,
+            "tools":       [_SELECT_COURSES_TOOL],
+            "tool_choice": {"type": "tool", "name": "select_courses"},
+            "messages":    [{"role": "user", "content": haiku_msg}],
+        }, call_site="pivot_retrieval", timeout=20.0)
         tool_use = next(
             (b for b in resp.json()["content"] if b["type"] == "tool_use"), None
         )
@@ -2978,6 +2956,9 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
         intro_text   = tool_use["input"].get("intro_text") or "Here are some courses that might interest you."
         print(f"[pivot_retrieval] selected={selected_ids} intro={intro_text!r}", flush=True)
 
+    except RateLimitError:
+        selected_ids = [str(c["course_id"]) for c in candidates[:5]]
+        intro_text   = "Here are some courses that might interest you."
     except Exception as e:
         print(f"[pivot_retrieval] Haiku error: {e} — falling back to top 5 Chroma hits", flush=True)
         selected_ids = [str(c["course_id"]) for c in candidates[:5]]
@@ -3085,6 +3066,13 @@ def chat():
 
     # Stages 1–3 — Haiku specifies searches before any retrieval fires
     spec, turn1_content, turn1_user_prompt = chat_specify_searches(message, chat_history, browsing_history, candidate_set)
+    if spec == "rate_limited":
+        return jsonify({
+            "results":         [],
+            "acknowledgement": "The service is very busy right now — please try again in a moment.",
+            "search_type":     "none",
+            "candidate_set":   candidate_set,
+        })
     if spec:
         _log_specify_searches(spec)
     else:
