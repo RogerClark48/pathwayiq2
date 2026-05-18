@@ -1795,25 +1795,32 @@ def admin_codes():
     conn.row_factory = sqlite3.Row
 
     if request.method == "POST":
-        label    = (request.form.get("label") or "").strip() or "Unlabelled"
-        days_str = (request.form.get("days") or "").strip()
-        expires_at = None
-        if days_str:
-            try:
-                from datetime import timedelta
-                expires_at = (datetime.utcnow() + timedelta(days=int(days_str))).isoformat()
-            except ValueError:
-                pass
-        word     = random.choice(_WORDLIST)
-        digits   = str(random.randint(1000, 9999))
-        new_code = f"{word}-{digits}"
-        now      = datetime.utcnow().isoformat()
-        conn.execute(
-            "INSERT INTO access_codes (code, label, expires_at, created_at, used_count) "
-            "VALUES (?, ?, ?, ?, 0)",
-            (new_code, label, expires_at, now)
-        )
-        conn.commit()
+        action = request.form.get("action", "create")
+        if action == "delete":
+            code_to_delete = (request.form.get("code") or "").strip()
+            if code_to_delete:
+                conn.execute("DELETE FROM access_codes WHERE code = ?", (code_to_delete,))
+                conn.commit()
+        else:
+            label    = (request.form.get("label") or "").strip() or "Unlabelled"
+            days_str = (request.form.get("days") or "").strip()
+            expires_at = None
+            if days_str:
+                try:
+                    from datetime import timedelta
+                    expires_at = (datetime.utcnow() + timedelta(days=int(days_str))).isoformat()
+                except ValueError:
+                    pass
+            word     = random.choice(_WORDLIST)
+            digits   = str(random.randint(1000, 9999))
+            new_code = f"{word}-{digits}"
+            now      = datetime.utcnow().isoformat()
+            conn.execute(
+                "INSERT INTO access_codes (code, label, expires_at, created_at, used_count) "
+                "VALUES (?, ?, ?, ?, 0)",
+                (new_code, label, expires_at, now)
+            )
+            conn.commit()
 
     rows = conn.execute(
         "SELECT code, label, expires_at, created_at, used_count FROM access_codes "
@@ -1833,6 +1840,15 @@ def admin_codes():
             status = "Active"
             status_cls = "active"
         highlight = ' style="background:#fffbe6;font-weight:bold;"' if r["code"] == new_code else ""
+        code_val = r['code']
+        delete_btn = (
+            f'<form method="POST" action="/admin/codes" style="display:inline" '
+            f'onsubmit="return confirm(\'Revoke {code_val}?\')">'
+            f'<input type="hidden" name="action" value="delete">'
+            f'<input type="hidden" name="code" value="{code_val}">'
+            f'<button type="submit" class="btn-revoke">Revoke</button>'
+            f'</form>'
+        )
         table_rows += (
             f"<tr{highlight}>"
             f"<td>{r['code']}</td>"
@@ -1840,6 +1856,7 @@ def admin_codes():
             f"<td>{expires_display}</td>"
             f"<td>{r['used_count']}</td>"
             f"<td class='{status_cls}'>{status}</td>"
+            f"<td>{delete_btn}</td>"
             f"</tr>\n"
         )
 
@@ -2153,6 +2170,11 @@ _ADMIN_PAGE_HTML = """<!DOCTYPE html>
   }
   button:hover { background: #0f766e; }
   .hint { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+  .btn-revoke {
+    padding: 4px 10px; background: #fff; color: #dc2626; border: 1px solid #dc2626;
+    border-radius: 4px; font-size: 12px; cursor: pointer;
+  }
+  .btn-revoke:hover { background: #dc2626; color: #fff; }
 </style>
 </head>
 <body>
@@ -2161,7 +2183,7 @@ _ADMIN_PAGE_HTML = """<!DOCTYPE html>
 
 <h2>Current codes</h2>
 <table>
-  <thead><tr><th>Code</th><th>Label</th><th>Expires</th><th>Used</th><th>Status</th></tr></thead>
+  <thead><tr><th>Code</th><th>Label</th><th>Expires</th><th>Used</th><th>Status</th><th></th></tr></thead>
   <tbody>{{TABLE_ROWS}}</tbody>
 </table>
 
