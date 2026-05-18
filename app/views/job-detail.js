@@ -2,6 +2,7 @@
 
 import { go }                       from '../router.js';
 import { state, saveItem, unsaveItem, isSaved } from '../state.js';
+import { logEvent } from '../analytics.js';
 
 const BOOKMARK_EMPTY = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
@@ -82,6 +83,8 @@ export function JobDetailView(slices = {}) {
   content.className = 'cd-content';
   content.innerHTML = '<p class="cd-loading">Loading…</p>';
   el.appendChild(content);
+
+  logEvent('career_detail_open', 'job', jobId, jobTitle);
 
   fetch(`/jobs/${jobId}`)
     .then(r => {
@@ -225,6 +228,8 @@ function loadProgression(content, jobId, backRoute, backSlices) {
         })());
         return;
       }
+
+      logEvent('progression_open', 'job', jobId, null);
 
       if (d.narrative) {
         const narr = document.createElement('p');
