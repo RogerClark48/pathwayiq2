@@ -1855,6 +1855,162 @@ def admin_codes():
     return make_response(html)
 
 
+@app.get("/admin/analytics")
+def admin_analytics():
+    if not _check_admin_auth():
+        resp = make_response("Unauthorised", 401)
+        resp.headers["WWW-Authenticate"] = 'Basic realm="FutureFinder Admin"'
+        return resp
+
+    days_param = request.args.get("days", "30")
+    if days_param == "all":
+        cutoff = None
+        period_label = "All time"
+    else:
+        try:
+            n = int(days_param)
+        except ValueError:
+            n = 30
+        from datetime import timedelta
+        cutoff = (datetime.utcnow() - timedelta(days=n)).isoformat()
+        period_label = f"Last {n} days"
+
+    conn = sqlite3.connect(ANALYTICS_DB)
+    conn.row_factory = sqlite3.Row
+
+    def q(sql, params=()):
+        return conn.execute(sql, params).fetchall()
+
+    ts_filter  = "ts >= ?" if cutoff else "1=1"
+    ts_args    = (cutoff,) if cutoff else ()
+
+    # Summary stats
+    summary = conn.execute(
+        f"SELECT COUNT(DISTINCT session_id) as sessions, COUNT(*) as total_events "
+        f"FROM events WHERE {ts_filter}", ts_args
+    ).fetchone()
+
+    chat_submits = conn.execute(
+        f"SELECT COUNT(*) as n FROM events WHERE event='chat_submit' AND {ts_filter}", ts_args
+    ).fetchone()["n"]
+
+    rate_limit_count = conn.execute(
+        f"SELECT COUNT(*) as n FROM events WHERE event='rate_limit' AND {ts_filter}", ts_args
+    ).fetchone()["n"]
+
+    # Daily sessions — last 14 days regardless of period
+    from datetime import timedelta
+    cutoff14 = (datetime.utcnow() - timedelta(days=13)).strftime("%Y-%m-%d")
+    daily_rows = q(
+        "SELECT substr(ts,1,10) as day, COUNT(DISTINCT session_id) as n "
+        "FROM events WHERE event='session_start' AND substr(ts,1,10) >= ? "
+        "GROUP BY day ORDER BY day",
+        (cutoff14,)
+    )
+    daily_max = max((r["n"] for r in daily_rows), default=1)
+    daily_chart = ""
+    for r in daily_rows:
+        pct = int(r["n"] / daily_max * 100)
+        daily_chart += (
+            f'<div class="bar-row">'
+            f'<span class="bar-label">{r["day"][5:]}</span>'
+            f'<div class="bar-wrap"><div class="bar" style="width:{pct}%"></div>'
+            f'<span class="bar-val">{r["n"]}</span></div></div>\n'
+        )
+    if not daily_chart:
+        daily_chart = '<p class="empty">No session data yet.</p>'
+
+    # Engagement funnel
+    funnel_events = [
+        ("session_start",      "Sessions started"),
+        ("chat_submit",        "Chat messages sent"),
+        ("course_impression",  "Courses shown"),
+        ("career_impression",  "Careers shown"),
+        ("course_detail_open", "Course details opened"),
+        ("career_detail_open", "Career details opened"),
+        ("progression_open",   "Progression views"),
+        ("adzuna_click",       "Job listing clicks"),
+    ]
+    counts_by_event = {
+        r["event"]: r["n"]
+        for r in q(f"SELECT event, COUNT(*) as n FROM events WHERE {ts_filter} GROUP BY event", ts_args)
+    }
+    funnel_rows = ""
+    for ev, label in funnel_events:
+        n = counts_by_event.get(ev, 0)
+        funnel_rows += f"<tr><td>{label}</td><td class='num'>{n}</td></tr>\n"
+
+    # Top careers
+    career_rows = q(
+        f"SELECT entity_title, COUNT(*) as n FROM events "
+        f"WHERE event='career_impression' AND entity_title IS NOT NULL AND {ts_filter} "
+        f"GROUP BY entity_title ORDER BY n DESC LIMIT 10",
+        ts_args
+    )
+    careers_table = "".join(
+        f"<tr><td>{r['entity_title']}</td><td class='num'>{r['n']}</td></tr>\n"
+        for r in career_rows
+    ) or "<tr><td colspan='2' class='empty'>No data</td></tr>"
+
+    # Top courses
+    course_rows = q(
+        f"SELECT entity_title, COUNT(*) as n FROM events "
+        f"WHERE event='course_impression' AND entity_title IS NOT NULL AND {ts_filter} "
+        f"GROUP BY entity_title ORDER BY n DESC LIMIT 10",
+        ts_args
+    )
+    courses_table = "".join(
+        f"<tr><td>{r['entity_title']}</td><td class='num'>{r['n']}</td></tr>\n"
+        for r in course_rows
+    ) or "<tr><td colspan='2' class='empty'>No data</td></tr>"
+
+    # Rate limit events
+    rl_rows = q(
+        "SELECT ts, meta FROM events WHERE event='rate_limit' ORDER BY ts DESC LIMIT 20"
+    )
+    if rl_rows:
+        rl_table_rows = ""
+        for r in rl_rows:
+            ts_fmt = r["ts"][:19].replace("T", " ")
+            try:
+                meta = json.loads(r["meta"] or "{}")
+                call_site    = meta.get("call_site", "?")
+                retry_after  = meta.get("retry_after", "?")
+            except Exception:
+                call_site, retry_after = "?", "?"
+            rl_table_rows += f"<tr><td>{ts_fmt}</td><td>{call_site}</td><td>{retry_after}s</td></tr>\n"
+        rl_section = (
+            f'<h2 class="warn">Rate limit events (last 20)</h2>'
+            f'<table><thead><tr><th>Time (UTC)</th><th>Call site</th><th>Retry after</th></tr></thead>'
+            f'<tbody>{rl_table_rows}</tbody></table>'
+        )
+    else:
+        rl_section = '<h2>Rate limit events</h2><p class="empty">None recorded.</p>'
+
+    period_nav = ""
+    for label, val in [("7 days", "7"), ("30 days", "30"), ("All time", "all")]:
+        active = ' class="active"' if val == days_param else ""
+        period_nav += f'<a href="/admin/analytics?days={val}"{active}>{label}</a> '
+
+    conn.close()
+
+    html = (
+        _ANALYTICS_PAGE_HTML
+        .replace("{{PERIOD_LABEL}}", period_label)
+        .replace("{{PERIOD_NAV}}", period_nav)
+        .replace("{{SESSIONS}}", str(summary["sessions"]))
+        .replace("{{TOTAL_EVENTS}}", str(summary["total_events"]))
+        .replace("{{CHAT_SUBMITS}}", str(chat_submits))
+        .replace("{{RATE_LIMIT_COUNT}}", str(rate_limit_count))
+        .replace("{{DAILY_CHART}}", daily_chart)
+        .replace("{{FUNNEL_ROWS}}", funnel_rows)
+        .replace("{{CAREERS_TABLE}}", careers_table)
+        .replace("{{COURSES_TABLE}}", courses_table)
+        .replace("{{RL_SECTION}}", rl_section)
+    )
+    return make_response(html)
+
+
 # ---------------------------------------------------------------------------
 # Access page HTML
 # ---------------------------------------------------------------------------
@@ -2026,6 +2182,95 @@ _ADMIN_PAGE_HTML = """<!DOCTYPE html>
   </div>
   <p class="hint">Leave duration blank for a permanent code.</p>
 </form>
+<p style="margin-top:24px;font-size:13px;color:#64748b;">
+  <a href="/admin/analytics" style="color:#0d9488;">View analytics &rarr;</a>
+</p>
+</body>
+</html>"""
+
+
+_ANALYTICS_PAGE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FutureFinder Admin — Analytics</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f8fafc; color: #1e293b; padding: 32px 24px; max-width: 900px; }
+  h1 { font-size: 20px; color: #0d9488; margin-bottom: 4px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 28px 0 12px; color: #334155; }
+  h2.warn { color: #dc2626; }
+  .nav { font-size: 13px; color: #64748b; margin-bottom: 6px; }
+  .nav a { color: #0d9488; text-decoration: none; margin-right: 12px; }
+  .period { display: flex; gap: 8px; margin-bottom: 28px; }
+  .period a {
+    padding: 5px 14px; border-radius: 20px; font-size: 13px; text-decoration: none;
+    background: #e2e8f0; color: #475569;
+  }
+  .period a.active { background: #0d9488; color: #fff; }
+  .summary { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 8px; }
+  .stat { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 24px; min-width: 130px; }
+  .stat-val { font-size: 28px; font-weight: 700; color: #0d9488; }
+  .stat-label { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .stat.warn .stat-val { color: #dc2626; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 14px; }
+  th { text-align: left; padding: 8px 12px; background: #e2e8f0; color: #475569; font-weight: 600; }
+  td { padding: 7px 12px; border-bottom: 1px solid #e2e8f0; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; color: #334155; font-weight: 600; }
+  .empty { color: #94a3b8; font-size: 13px; font-style: italic; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .bar-label { font-size: 12px; color: #64748b; width: 42px; flex-shrink: 0; }
+  .bar-wrap { flex: 1; display: flex; align-items: center; gap: 6px; }
+  .bar { height: 16px; background: #0d9488; border-radius: 3px; min-width: 2px; }
+  .bar-val { font-size: 12px; color: #475569; }
+</style>
+</head>
+<body>
+<div class="nav">
+  <a href="/admin/analytics">Analytics</a>
+  <a href="/admin/codes">Access codes</a>
+</div>
+<h1>FutureFinder Analytics</h1>
+
+<div class="period">{{PERIOD_NAV}}</div>
+
+<div class="summary">
+  <div class="stat"><div class="stat-val">{{SESSIONS}}</div><div class="stat-label">Sessions</div></div>
+  <div class="stat"><div class="stat-val">{{CHAT_SUBMITS}}</div><div class="stat-label">Chat messages</div></div>
+  <div class="stat"><div class="stat-val">{{TOTAL_EVENTS}}</div><div class="stat-label">Total events</div></div>
+  <div class="stat warn"><div class="stat-val">{{RATE_LIMIT_COUNT}}</div><div class="stat-label">Rate limit hits</div></div>
+</div>
+
+<h2>Daily sessions (last 14 days)</h2>
+{{DAILY_CHART}}
+
+<h2>Engagement</h2>
+<table>
+  <thead><tr><th>Event</th><th style="text-align:right">Count</th></tr></thead>
+  <tbody>{{FUNNEL_ROWS}}</tbody>
+</table>
+
+<div class="two-col">
+  <div>
+    <h2>Top careers seen</h2>
+    <table>
+      <thead><tr><th>Career</th><th style="text-align:right">Shown</th></tr></thead>
+      <tbody>{{CAREERS_TABLE}}</tbody>
+    </table>
+  </div>
+  <div>
+    <h2>Top courses seen</h2>
+    <table>
+      <thead><tr><th>Course</th><th style="text-align:right">Shown</th></tr></thead>
+      <tbody>{{COURSES_TABLE}}</tbody>
+    </table>
+  </div>
+</div>
+
+{{RL_SECTION}}
+
 </body>
 </html>"""
 
