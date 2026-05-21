@@ -233,7 +233,7 @@ Example: "Here are all the digital and technology courses at GMIoT. [FILTER:6]"
 
 _SELECT_COURSES_TOOL = {
     "name": "select_courses",
-    "description": "Select the most relevant courses for this user from the candidate set.",
+    "description": "Select courses from the candidate set that best match what the user said in the conversation. Read the conversation first, then choose.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -3163,7 +3163,7 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
     try:
         hits = match_courses_col.query(
             query_embeddings=[vector],
-            n_results=15,
+            n_results=25,
             include=["metadatas", "distances", "documents"],
         )
     except Exception as e:
@@ -3200,7 +3200,7 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
         f"Conversation:\n{conversation_text}\n\n"
         f"Candidate courses (ID | Title | Qual Level | Preview):\n"
         + "\n".join(candidate_lines)
-        + "\n\nSelect the 5–8 most relevant courses for this user, in order of relevance."
+        + "\n\nUsing the conversation above as your guide, select the 5–8 courses that best match what this specific user has said they want. The conversation is your primary input — read it carefully before selecting."
     )
 
     # Haiku tool-use selection
@@ -3209,6 +3209,14 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
             "model":       HAIKU_MODEL,
             "max_tokens":  300,
             "temperature": 0.3,
+            "system": (
+                "You are selecting courses for a prospective student based on a short interview. "
+                "Read the conversation carefully and identify ALL aspects of what they want — "
+                "including when they express interest in a combination of areas (e.g. 'computers AND art'). "
+                "When the user names a mix, prioritise courses that span both areas over courses "
+                "that only cover one. Do not default to the most common or obvious interpretation "
+                "of a single keyword if the user has clearly expressed a cross-disciplinary interest."
+            ),
             "tools":       [_SELECT_COURSES_TOOL],
             "tool_choice": {"type": "tool", "name": "select_courses"},
             "messages":    [{"role": "user", "content": haiku_msg}],
