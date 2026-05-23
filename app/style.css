@@ -1230,6 +1230,22 @@ body {
   margin-top: 6px;
 }
 
+/* Reveal buttons */
+.jd-reveal-btn {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-white);
+  background: var(--c-teal);
+  border-radius: 999px;
+  padding: 5px 14px;
+  margin-top: 8px;
+  cursor: pointer;
+}
+.jd-reveal-btn--secondary {
+  margin-top: 14px;
+}
+
 /* Career trajectory */
 .jd-traj-label {
   font-size: 12px;
