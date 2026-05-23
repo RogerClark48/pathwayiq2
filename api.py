@@ -2600,7 +2600,7 @@ def course_careers(course_id):
 
 @app.get("/jobs/<int:job_id>/courses")
 def job_courses(job_id):
-    limit = min(int(request.args.get("limit", 3)), 20)
+    limit = min(int(request.args.get("limit", 5)), 20)
 
     # Lift the skills chunk vector from the jobs collection
     stored = jobs_col.get(
@@ -2618,19 +2618,85 @@ def job_courses(job_id):
     vector   = stored["embeddings"][0]
     job_meta = stored["metadatas"][0]
 
+    # Fetch a larger pool so Haiku has enough to choose from
     hits = match_courses_col.query(
         query_embeddings=[vector],
-        n_results=limit,
+        n_results=15,
         include=["metadatas", "distances"],
     )
 
-    results = []
+    candidates = []
     for cid, meta, dist in zip(hits["ids"][0], hits["metadatas"][0], hits["distances"][0]):
         s = score(dist)
-        if s < 65:
-            continue
-        db     = ff_course_row(cid)
-        course = format_course_from_db(db, s) if db else None
+        db = ff_course_row(cid)
+        if db:
+            candidates.append({"db": db, "score": s, "cid": cid})
+
+    if not candidates:
+        return jsonify({"job_id": job_id, "job_title": job_meta.get("title"), "results": []})
+
+    # Haiku ratification — select the genuinely relevant courses for this job
+    job = job_row(str(job_id))
+    job_context = ""
+    if job:
+        job_context = (
+            f"Job title: {job['title']}\n"
+            f"Skills required: {(job.get('skills_required') or '')[:400]}\n"
+            f"Entry routes: {(job.get('entry_routes') or '')[:300]}"
+        )
+    else:
+        job_context = f"Job title: {job_meta.get('title', '')}"
+
+    candidate_lines = [
+        f"{c['cid']} | {c['db']['course_title']} | {c['db'].get('qual_type','')} Level {c['db'].get('level','')} | {(c['db'].get('overview') or '')[:200]}"
+        for c in candidates
+    ]
+    haiku_msg = (
+        f"{job_context}\n\n"
+        f"Candidate courses (ID | Title | Qual Level | Overview):\n"
+        + "\n".join(candidate_lines)
+        + f"\n\nSelect the {limit} courses that most genuinely prepare someone for this role. "
+        f"Read the job's skills and entry routes carefully — only include courses whose content "
+        f"clearly aligns with what this job actually requires."
+    )
+
+    selected_ids = None
+    try:
+        resp = _anthropic_post({
+            "model":       HAIKU_MODEL,
+            "max_tokens":  300,
+            "temperature": 0.2,
+            "system": (
+                "You are matching courses to a job role. "
+                "Read the job description carefully and select only courses that "
+                "genuinely prepare someone for that specific role. "
+                "Reject courses that are only superficially related."
+            ),
+            "tools":       [_SELECT_COURSES_TOOL],
+            "tool_choice": {"type": "tool", "name": "select_courses"},
+            "messages":    [{"role": "user", "content": haiku_msg}],
+        }, call_site="job_courses_ratify", timeout=20.0)
+        tool_use = next(
+            (b for b in resp.json()["content"] if b["type"] == "tool_use"), None
+        )
+        if tool_use:
+            selected_ids = [str(i) for i in (tool_use["input"].get("selected_course_ids") or [])]
+            print(f"[job_courses] Haiku selected {len(selected_ids)} courses for job {job_id}", flush=True)
+    except RateLimitError:
+        print(f"[job_courses] rate limited — falling back to Chroma top {limit}", flush=True)
+    except Exception as e:
+        print(f"[job_courses] Haiku error: {e} — falling back to Chroma top {limit}", flush=True)
+
+    # Build results — Haiku order if available, else top Chroma hits
+    cand_by_id = {c["cid"]: c for c in candidates}
+    if selected_ids:
+        ordered = [cand_by_id[sid] for sid in selected_ids if sid in cand_by_id]
+    else:
+        ordered = candidates[:limit]
+
+    results = []
+    for c in ordered[:limit]:
+        course = format_course_from_db(c["db"], c["score"])
         if course:
             results.append(course)
 

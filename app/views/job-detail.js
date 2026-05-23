@@ -93,8 +93,16 @@ export function JobDetailView(slices = {}) {
     })
     .then(d => {
       renderMain(content, d);
-      loadCourses(content, jobId);
-      loadProgression(content, jobId, backRoute, backSlices);
+      wireRevealButton(
+        content.querySelector('#jd-progression-section'),
+        'Career path',
+        () => loadExplain(content, jobId),
+      );
+      wireRevealButton(
+        content.querySelector('#jd-courses-section'),
+        'Courses that lead here',
+        () => loadCourses(content, jobId),
+      );
     })
     .catch(err => {
       console.error('[job-detail]', err);
@@ -188,7 +196,7 @@ function renderMain(content, d) {
     content.appendChild(link);
   }
 
-  // ── Placeholders for async sections ─────────────────────────────────────
+  // ── On-demand sections ───────────────────────────────────────────────────
   const progSection = document.createElement('div');
   progSection.id = 'jd-progression-section';
   content.appendChild(progSection);
@@ -198,67 +206,50 @@ function renderMain(content, d) {
   content.appendChild(coursesSection);
 }
 
-function loadProgression(content, jobId, backRoute, backSlices) {
+function wireRevealButton(section, label, onReveal) {
+  if (!section) return;
+
+  const hr = document.createElement('hr');
+  hr.className = 'cd-divider';
+  section.appendChild(hr);
+
+  const btn = document.createElement('button');
+  btn.className = 'jd-reveal-btn';
+  btn.textContent = label;
+  section.appendChild(btn);
+
+  btn.addEventListener('click', () => {
+    btn.remove();
+    onReveal();
+  }, { once: true });
+}
+
+function loadExplain(content, jobId) {
   const section = content.querySelector('#jd-progression-section');
   if (!section) return;
 
-  section.appendChild(document.createElement('hr')).className = 'cd-divider';
-  section.appendChild((() => {
-    const h = document.createElement('h3');
-    h.className = 'cd-section-heading';
-    h.textContent = 'Career trajectory';
-    return h;
-  })());
-
   const loading = document.createElement('p');
   loading.className = 'cd-loading';
-  loading.textContent = 'Generating career pathway…';
+  loading.textContent = 'Loading career path…';
   section.appendChild(loading);
 
-  fetch(`/jobs/${jobId}/progression`)
+  fetch(`/jobs/${jobId}/explain`)
     .then(r => r.json())
     .then(d => {
       loading.remove();
-      if (!d.has_progression) {
-        section.appendChild((() => {
-          const p = document.createElement('p');
-          p.className = 'cd-body cd-muted';
-          p.textContent = 'No progression data available for this role.';
-          return p;
-        })());
+      const text = d.text || '';
+      if (!text) {
+        const p = document.createElement('p');
+        p.className = 'cd-body cd-muted';
+        p.textContent = 'No career pathway information available.';
+        section.appendChild(p);
         return;
       }
-
       logEvent('progression_open', 'job', jobId, null);
-
-      if (d.narrative) {
-        const narr = document.createElement('p');
-        narr.className = 'cd-body';
-        narr.textContent = d.narrative;
-        section.appendChild(narr);
-      }
-
-      if (d.inbound?.length) {
-        const inboundHead = document.createElement('p');
-        inboundHead.className = 'jd-traj-label';
-        inboundHead.textContent = 'Roles that lead here';
-        section.appendChild(inboundHead);
-        const pills = document.createElement('div');
-        pills.className = 'jd-role-pills';
-        d.inbound.forEach(job => pills.appendChild(rolePill(job, backRoute, backSlices)));
-        section.appendChild(pills);
-      }
-
-      if (d.outbound?.length) {
-        const outHead = document.createElement('p');
-        outHead.className = 'jd-traj-label';
-        outHead.textContent = 'Where this can lead';
-        section.appendChild(outHead);
-        const pills = document.createElement('div');
-        pills.className = 'jd-role-pills';
-        d.outbound.forEach(job => pills.appendChild(rolePill(job, backRoute, backSlices)));
-        section.appendChild(pills);
-      }
+      const narr = document.createElement('p');
+      narr.className = 'cd-body';
+      narr.textContent = text;
+      section.appendChild(narr);
     })
     .catch(() => {
       loading.remove();
@@ -381,15 +372,3 @@ function loadCourses(content, jobId) {
     });
 }
 
-function rolePill(job, backRoute, backSlices) {
-  const btn = document.createElement('button');
-  btn.className = 'jd-role-pill';
-  btn.textContent = job.title;
-  btn.addEventListener('click', () => go('job-detail', {
-    jobId: job.id,
-    jobTitle: job.title,
-    backRoute,
-    backSlices,
-  }));
-  return btn;
-}
