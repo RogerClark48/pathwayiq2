@@ -68,6 +68,19 @@ function makeStarterChips() {
   return wrap;
 }
 
+function makeSuggestionChips(suggestions) {
+  const wrap = document.createElement('div');
+  wrap.className = 'suggestion-chips';
+  suggestions.forEach(text => {
+    const btn = document.createElement('button');
+    btn.className = 'starter-chip suggestion-chip';
+    btn.dataset.text = text;
+    btn.textContent = text;
+    wrap.appendChild(btn);
+  });
+  return wrap;
+}
+
 export function StartChatView() {
   // Seed welcome message on first load; preserved across in-session navigations.
   if (state.chat.messages.length === 0) {
@@ -136,12 +149,21 @@ export function StartChatView() {
     return wrap;
   }
 
+  let suggestionEl = null;
+
+  function clearSuggestions() {
+    if (suggestionEl) { suggestionEl.remove(); suggestionEl = null; }
+  }
+
   async function submit() {
     const text = chatInput.value.trim();
     if (!text || state.chat.isWaitingForResponse) return;
 
     // Remove starter chips permanently on first user message.
     if (starterEl) { starterEl.remove(); starterEl = null; }
+
+    // Remove any suggestion chips from the previous turn.
+    clearSuggestions();
 
     logEvent('chat_submit', null, null, null, { query: text });
     submitMessage(text);
@@ -164,12 +186,17 @@ export function StartChatView() {
       state.chat.messages.push({ role: 'bot', text: reply });
       messagesEl.appendChild(makeBubble('bot', reply));
 
+      if (data.suggestions?.length && !data.pivot_to_courses) {
+        suggestionEl = makeSuggestionChips(data.suggestions);
+        messagesEl.appendChild(suggestionEl);
+      }
+
       if (data.pivot_to_courses && data.course_list) {
         setCourseList(data.course_list);
         state.chat.messages.push({ role: 'cta', text: 'See courses →' });
         messagesEl.appendChild(makeCtaButton('See courses →'));
-        scrollBottom();
       }
+      scrollBottom();
     } catch (err) {
       console.error('[chat/welcome]', err);
       thinkingEl.remove();
@@ -194,6 +221,7 @@ export function StartChatView() {
     if (!chip) return;
     chatInput.value = chip.dataset.text;
     sendBtn.disabled = false;
+    chatInput.focus();
   });
 
   return el;
