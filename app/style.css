@@ -776,6 +776,13 @@ body {
   background: rgba(26,35,126,0.06);
 }
 
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 12px 0;
+}
+
 /* CTA button shown after LLM pivots to results */
 .chat-cta-btn {
   display: block;

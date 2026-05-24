@@ -220,6 +220,36 @@ Use [FILTER:N] instead of [PIVOT_TO_COURSES] for these cases — do not use both
 
 Example: "Here are all the digital and technology courses at GMIoT. [FILTER:6]"
 
+## Suggestion chips
+
+When your response offers the user 2–4 concrete options to choose between,
+append a [SUGGESTIONS:...] marker so the UI can render them as tappable chips.
+
+Format: [SUGGESTIONS:option one|option two|option three]
+
+Use this when you are giving the user specific things to pick from — narrow
+sub-areas, work style preferences, or concrete examples. Keep each option
+short (3–5 words). Do not use it for open-ended questions, for pivots to
+courses, or for filter responses.
+
+The sentence immediately before [SUGGESTIONS:...] must invite the user to
+choose — it should read naturally as a lead-in to the options. Vary the
+phrasing naturally.
+
+Good examples:
+- "Which of these sounds closest?"
+- "Does any of these appeal?"
+- "Which direction feels more like you?"
+- "Pick whichever feels closest and we'll go from there."
+
+Example response: "Great starting point. Creative industries covers a lot of
+ground — are you drawn more to the technical side or the design side?
+Which of these sounds closest?
+[SUGGESTIONS:audio/visual production|game development|graphic design|digital media]"
+
+Do not use [SUGGESTIONS:...] and [PIVOT_TO_COURSES] or [FILTER:N] in the
+same response.
+
 ## What not to do
 
 - Do not ask the user's name, age, or location.
@@ -457,17 +487,21 @@ def welcome_chat_llm(session_id: str, message: str) -> dict:
         print(f"[welcome_chat] Sonnet error: {e}", flush=True)
         return {"bot_response": None, "pivot_to_courses": False}
 
-    filter_match = re.search(r'\[FILTER:(\d+)\]', raw_text)
+    filter_match      = re.search(r'\[FILTER:(\d+)\]', raw_text)
+    suggestions_match = re.search(r'\[SUGGESTIONS:([^\]]+)\]', raw_text)
     filter_code  = int(filter_match.group(1)) if filter_match else None
+    suggestions  = [s.strip() for s in suggestions_match.group(1).split('|') if s.strip()] if suggestions_match else []
     pivot        = "[PIVOT_TO_COURSES]" in raw_text
-    bot_response = re.sub(r'\[FILTER:\d+\]', '', raw_text).replace("[PIVOT_TO_COURSES]", "").strip()
+    bot_response = re.sub(r'\[FILTER:\d+\]', '', raw_text)
+    bot_response = re.sub(r'\[SUGGESTIONS:[^\]]+\]', '', bot_response)
+    bot_response = bot_response.replace("[PIVOT_TO_COURSES]", "").strip()
 
     with _welcome_sessions_lock:
         sess["messages"].append({"role": "assistant", "content": bot_response})
         sess["interview_turn_count"] += 1
 
-    print(f"[welcome_chat] pivot={pivot} filter_code={filter_code} response={bot_response[:80]!r}", flush=True)
-    return {"bot_response": bot_response, "pivot_to_courses": pivot, "filter_code": filter_code}
+    print(f"[welcome_chat] pivot={pivot} filter_code={filter_code} suggestions={suggestions} response={bot_response[:80]!r}", flush=True)
+    return {"bot_response": bot_response, "pivot_to_courses": pivot, "filter_code": filter_code, "suggestions": suggestions}
 
 
 # ---------------------------------------------------------------------------
@@ -3380,6 +3414,7 @@ def chat_welcome():
         "bot_response":     result["bot_response"],
         "pivot_to_courses": pivot,
         "course_list":      course_list,
+        "suggestions":      result.get("suggestions") or [],
     })
 
 
