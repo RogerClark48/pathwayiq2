@@ -55,6 +55,14 @@ function makeCtaButton(text) {
   return btn;
 }
 
+function makeQualMapButton() {
+  const btn = document.createElement('button');
+  btn.className = 'chat-cta-btn';
+  btn.textContent = 'View qualification map →';
+  btn.addEventListener('click', () => go('pathway-map', { backRoute: 'chat-first' }));
+  return btn;
+}
+
 function makeStarterChips() {
   const wrap = document.createElement('div');
   wrap.className = 'starter-chips';
@@ -91,25 +99,40 @@ export function StartChatView() {
   el.className = 'view view-chat';
 
   el.innerHTML = `
-    <div class="chat-messages" id="chat-messages"></div>
-    <div class="chat-input-area">
-      <div class="chat-input-box">
-        <input type="text" class="chat-input-field" id="chat-input"
-               placeholder="Type your message…"
-               autocomplete="off" autocorrect="off" spellcheck="false">
-        <button class="chat-send-btn" id="chat-send" disabled aria-label="Send message">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"
-               aria-hidden="true">
-            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-          </svg>
-        </button>
+    <div class="chat-top-bar">
+      <button class="chat-restart-btn" id="chat-restart">Start again</button>
+    </div>
+    <div class="chat-body">
+      <div class="chat-messages" id="chat-messages"><div class="chat-spacer"></div></div>
+      <div class="chat-input-area">
+        <div class="chat-input-box">
+          <input type="text" class="chat-input-field" id="chat-input"
+                 placeholder="Type your message…"
+                 autocomplete="off" autocorrect="off" spellcheck="false">
+          <button class="chat-send-btn" id="chat-send" disabled aria-label="Send message">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"
+                 aria-hidden="true">
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   `;
 
-  const messagesEl = el.querySelector('#chat-messages');
-  const chatInput  = el.querySelector('#chat-input');
-  const sendBtn    = el.querySelector('#chat-send');
+  const messagesEl  = el.querySelector('#chat-messages');
+  const chatInput   = el.querySelector('#chat-input');
+  const sendBtn     = el.querySelector('#chat-send');
+  const restartBtn  = el.querySelector('#chat-restart');
+
+  restartBtn.addEventListener('click', () => {
+    const ok = window.confirm(
+      'This will clear your conversation and any saved items. Are you sure you want to start again?'
+    );
+    if (!ok) return;
+    sessionStorage.removeItem('ff_session');
+    window.location.reload();
+  });
 
   // Render existing messages.
   state.chat.messages.forEach(msg => {
@@ -128,7 +151,7 @@ export function StartChatView() {
     messagesEl.appendChild(starterEl);
   }
 
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  requestAnimationFrame(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
 
   // Enable send when input has content.
   chatInput.addEventListener('input', () => {
@@ -189,6 +212,10 @@ export function StartChatView() {
       if (data.suggestions?.length && !data.pivot_to_courses) {
         suggestionEl = makeSuggestionChips(data.suggestions);
         messagesEl.appendChild(suggestionEl);
+      }
+
+      if (data.show_qual_map) {
+        messagesEl.appendChild(makeQualMapButton());
       }
 
       if (data.pivot_to_courses && data.course_list) {

@@ -220,6 +220,20 @@ Use [FILTER:N] instead of [PIVOT_TO_COURSES] for these cases — do not use both
 
 Example: "Here are all the digital and technology courses at GMIoT. [FILTER:6]"
 
+## Qualification pathway map
+
+If the user asks about qualification types, levels, what different qualifications
+mean, or how they relate to each other (e.g. "what's a T Level?", "what's the
+difference between HNC and HND?", "what level should I be looking at?"), direct
+them to the qualification pathway map by ending your response with [SHOW_QUAL_MAP].
+
+Example: "Good question — there's a visual map that explains the different
+qualification types and how they connect. Have a look and come back if you want
+to explore courses from there. [SHOW_QUAL_MAP]"
+
+Do not use [SHOW_QUAL_MAP] with [PIVOT_TO_COURSES] or [FILTER:N] in the same
+response.
+
 ## Suggestion chips
 
 When your response offers the user 2–4 concrete options to choose between,
@@ -489,19 +503,20 @@ def welcome_chat_llm(session_id: str, message: str) -> dict:
 
     filter_match      = re.search(r'\[FILTER:(\d+)\]', raw_text)
     suggestions_match = re.search(r'\[SUGGESTIONS:([^\]]+)\]', raw_text)
-    filter_code  = int(filter_match.group(1)) if filter_match else None
-    suggestions  = [s.strip() for s in suggestions_match.group(1).split('|') if s.strip()] if suggestions_match else []
-    pivot        = "[PIVOT_TO_COURSES]" in raw_text
-    bot_response = re.sub(r'\[FILTER:\d+\]', '', raw_text)
-    bot_response = re.sub(r'\[SUGGESTIONS:[^\]]+\]', '', bot_response)
-    bot_response = bot_response.replace("[PIVOT_TO_COURSES]", "").strip()
+    filter_code   = int(filter_match.group(1)) if filter_match else None
+    suggestions   = [s.strip() for s in suggestions_match.group(1).split('|') if s.strip()] if suggestions_match else []
+    pivot         = "[PIVOT_TO_COURSES]" in raw_text
+    show_qual_map = "[SHOW_QUAL_MAP]" in raw_text
+    bot_response  = re.sub(r'\[FILTER:\d+\]', '', raw_text)
+    bot_response  = re.sub(r'\[SUGGESTIONS:[^\]]+\]', '', bot_response)
+    bot_response  = bot_response.replace("[PIVOT_TO_COURSES]", "").replace("[SHOW_QUAL_MAP]", "").strip()
 
     with _welcome_sessions_lock:
         sess["messages"].append({"role": "assistant", "content": bot_response})
         sess["interview_turn_count"] += 1
 
-    print(f"[welcome_chat] pivot={pivot} filter_code={filter_code} suggestions={suggestions} response={bot_response[:80]!r}", flush=True)
-    return {"bot_response": bot_response, "pivot_to_courses": pivot, "filter_code": filter_code, "suggestions": suggestions}
+    print(f"[welcome_chat] pivot={pivot} filter_code={filter_code} suggestions={suggestions} show_qual_map={show_qual_map} response={bot_response[:80]!r}", flush=True)
+    return {"bot_response": bot_response, "pivot_to_courses": pivot, "filter_code": filter_code, "suggestions": suggestions, "show_qual_map": show_qual_map}
 
 
 # ---------------------------------------------------------------------------
@@ -3415,6 +3430,7 @@ def chat_welcome():
         "pivot_to_courses": pivot,
         "course_list":      course_list,
         "suggestions":      result.get("suggestions") or [],
+        "show_qual_map":    result.get("show_qual_map") or False,
     })
 
 

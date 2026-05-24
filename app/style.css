@@ -397,6 +397,16 @@ body {
 }
 
 /* ── Pathway modal ───────────────────────────────────────────────────────── */
+.view-pathway-map .cd-content {
+  padding-bottom: 32px;
+}
+
+.pathway-screen-intro {
+  margin-bottom: 12px;
+  color: var(--c-muted);
+  font-size: 13px;
+}
+
 .pathway-modal {
   position: fixed;
   inset: 0;
@@ -706,15 +716,27 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   /* no padding — yellow shows full-bleed */
 }
 
+.chat-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .chat-messages {
+  flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  max-height: 55vh;
+  display: flex;
+  flex-direction: column;
   padding: 0 14px 8px;
+}
+
+.chat-spacer {
+  flex: 1;
 }
 
 /* Bubbles */
@@ -774,6 +796,27 @@ body {
 
 .starter-chip:hover {
   background: rgba(26,35,126,0.06);
+}
+
+.chat-top-bar {
+  display: flex;
+  justify-content: flex-start;
+  padding: 8px 16px 10px;
+}
+
+.chat-restart-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-brand);
+  background: var(--c-white);
+  border: 1.5px solid var(--c-brand);
+  border-radius: 999px;
+  padding: 4px 12px;
+  opacity: 0.6;
+}
+
+.chat-restart-btn:hover {
+  opacity: 1;
 }
 
 .suggestion-chips {
