@@ -11,7 +11,8 @@ import { StartChatView }  from './views/start-chat.js';
 import { CourseListView }   from './views/course-list.js';
 import { CourseDetailView } from './views/course-detail.js';
 import { JobDetailView }    from './views/job-detail.js';
-import { SavedListView }   from './views/saved-list.js';
+import { SavedListView }    from './views/saved-list.js';
+import { PathwayMapView }  from './views/pathway-map.js';
 
 register('welcome',       () => WelcomeView());
 register('edit',          () => EditView());
@@ -21,6 +22,7 @@ register('course-list',   () => CourseListView());
 register('course-detail', (slices) => CourseDetailView(slices));
 register('job-detail',    (slices) => JobDetailView(slices));
 register('saved-list',    () => SavedListView());
+register('pathway-map',   (slices) => PathwayMapView(slices));
 
 function updateBadge() {
   const badge = document.getElementById('saved-count');
