@@ -421,6 +421,60 @@ body {
 
 .pathway-modal.hidden { display: none; }
 
+/* ── Restart confirm modal ───────────────────────────────────────────────── */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.confirm-panel {
+  background: var(--c-white);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 320px;
+  padding: 24px 20px 20px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+
+.confirm-message {
+  margin: 0 0 20px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--c-text);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.confirm-btn-cancel,
+.confirm-btn-ok {
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+}
+
+.confirm-btn-cancel {
+  background: var(--c-border);
+  color: var(--c-text);
+}
+
+.confirm-btn-ok {
+  background: var(--c-teal);
+  color: #fff;
+}
+
 .pathway-panel {
   background: var(--c-white);
   border-radius: 16px;

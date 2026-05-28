@@ -392,7 +392,7 @@ function renderDetail(content, d, backRoute) {
     fullEl.hidden = true;
 
     // Career narrative — prose paragraphs with optional inline bullet lists
-    const narrativeSrc = d.pathways.narrative_bullets || d.pathways.narrative;
+    const narrativeSrc = d.pathways.career_narrative || d.pathways.narrative;
     if (narrativeSrc) {
       const narrativeEl = document.createElement('div');
       narrativeEl.className = 'cd-narrative';

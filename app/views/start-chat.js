@@ -126,12 +126,25 @@ export function StartChatView() {
   const restartBtn  = el.querySelector('#chat-restart');
 
   restartBtn.addEventListener('click', () => {
-    const ok = window.confirm(
-      'This will clear your conversation and any saved items. Are you sure you want to start again?'
-    );
-    if (!ok) return;
-    sessionStorage.removeItem('ff_session');
-    window.location.reload();
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-panel">
+        <p class="confirm-message">This will clear your conversation and any saved items.</p>
+        <div class="confirm-actions">
+          <button class="confirm-btn-cancel">Cancel</button>
+          <button class="confirm-btn-ok">Start again</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.confirm-btn-cancel').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('.confirm-btn-ok').addEventListener('click', () => {
+      overlay.remove();
+      sessionStorage.removeItem('ff_session');
+      window.location.reload();
+    });
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   });
 
   // Render existing messages.

@@ -19,7 +19,7 @@ print(f"[startup] All env vars: {[k for k in os.environ.keys()]}", flush=True)
 
 from institution_config import (
     INSTITUTION_NAME, INSTITUTION_FULL_NAME, INSTITUTION_REGION,
-    PROVIDERS, SSA_MAP, QUAL_FILTER_MAP, SUBJECT_AREAS,
+    PROVIDERS, SSA_MAP, SUBJECT_AREAS,
 )
 
 # ---------------------------------------------------------------------------
@@ -43,21 +43,30 @@ ANTHROPIC_URL      = "https://api.anthropic.com/v1/messages"
 HAIKU_MODEL        = "claude-haiku-4-5-20251001"
 SONNET_MODEL       = "claude-sonnet-4-6"
 
-_WELCOME_INTERVIEW_SYSTEM = """\
+# ---------------------------------------------------------------------------
+# Shared base — applies to every LLM call in the welcome flow.
+# Change tone, persona, or institution context here once; all calls pick it up.
+# ---------------------------------------------------------------------------
+_FF_BASE_SYSTEM = """\
 You are FutureFinder, an AI assistant helping prospective students explore
 courses and careers at the Greater Manchester Institute of Technology (GMIoT).
 
-Your job in this conversation is to understand what the person is interested
-in well enough to start suggesting relevant courses and careers. You are
-talking to someone who may be:
+You are talking to someone who may be:
 
 - A school leaver finishing A Levels or T Levels
 - An adult learner considering returning to study
 - Someone changing careers
 - Someone uncertain about what they want
 
-GMIoT offers courses from Level 3 (T level) through Level 7 (Masters), including
-apprenticeships at higher levels. There are no GCSEs or A Levels). The courses are STEM subjects for the most part.
+GMIoT offers courses from Level 3 (T Level) through Level 7 (Master's), including
+apprenticeships at higher levels. There are no GCSEs or A Levels on offer.
+The courses are STEM-focused with some creative and health subjects.
+
+Courses are retrieved from a database — do not invent course names or details
+from your own knowledge. Only work with courses the system provides to you.\
+"""
+
+_WELCOME_INTERVIEW_SYSTEM = _FF_BASE_SYSTEM + """
 
 ## Your goal
 
@@ -75,6 +84,7 @@ Any one of these is enough to pivot from interviewing to suggesting. Do not
 hold out for richer input.
 Courses can be filtered by the ssa_code field containing values (1 4 5 6 8 10 11 99)
 which are SSA codes.
+
 ## How to behave
 
 **Be warm, but stay on task.** Friendly in tone, but the goal is finding
@@ -209,8 +219,16 @@ Use [FILTER:N] for requests like:
 - "social science" → [FILTER:11]
 - "sustainability" → [FILTER:99]
 
+Do NOT use [FILTER:N] for anything other than these exact subject areas.
+In particular, never use [FILTER:N] for qualification types, levels, or providers —
+those must use [PIVOT_TO_COURSES]. For example:
+- "show me postgraduate courses" → [PIVOT_TO_COURSES] (not [FILTER:99])
+- "what level 4 courses are there?" → [PIVOT_TO_COURSES]
+- "show me apprenticeships" → [PIVOT_TO_COURSES]
+- "courses at Salford" → [PIVOT_TO_COURSES]
+
 Do NOT use [FILTER:N] for specific sub-disciplines or topics within an area —
-those should use [PIVOT_TO_COURSES] so the retrieval system can find the best
+those should also use [PIVOT_TO_COURSES] so the retrieval system can find the best
 matches. For example:
 - "show me electronics courses" → [PIVOT_TO_COURSES] (not [FILTER:4])
 - "I want to do software development" → [PIVOT_TO_COURSES] (not [FILTER:6])
@@ -317,7 +335,7 @@ PROGRESSION_SYSTEM_PROMPT = (
     "Do not use markdown code blocks, backticks, or any text outside the JSON object itself."
 )
 
-# SSA_MAP and QUAL_FILTER_MAP imported from institution_config
+# SSA_MAP imported from institution_config
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -481,7 +499,7 @@ def welcome_chat_llm(session_id: str, message: str) -> dict:
 
     with _welcome_sessions_lock:
         sess["messages"].append({"role": "user", "content": message})
-        history = list(sess["messages"][-6:])  # last 6 turns
+        history = list(sess["messages"])
 
     print(f"[welcome_chat] session={session_id[:8]}... turn={sess['interview_turn_count']+1} "
           f"msg={message!r}", flush=True)
@@ -634,10 +652,8 @@ def keyword_course_search(q: str, qualification: str | None) -> list[dict]:
            "WHERE c.course_title LIKE ? AND c.is_active = 1")
     params: list = [f"%{q}%"]
     if qualification:
-        qual_values = QUAL_FILTER_MAP.get(qualification, [qualification])
-        placeholders = ",".join("?" * len(qual_values))
-        sql += f" AND c.qual_type IN ({placeholders})"
-        params.extend(qual_values)
+        sql += " AND c.qual_type = ?"
+        params.append(qualification)
     rows = conn.execute(sql, params).fetchall()
     conn.close()
 
@@ -705,6 +721,8 @@ def merge_candidates(list_a: list, list_b: list) -> list:
     return sorted(seen.values(), key=lambda x: x["score"], reverse=True)[:TOP_N_CANDIDATES]
 
 
+# Currently used by legacy /chat. Retained — intended for reuse in welcome_chat
+# filter extension (SQL-from-chat-text feature).
 def build_where_clause(filters: dict, id_scope: list | None = None) -> dict:
     """Build a Chroma where clause for course searches.
 
@@ -718,12 +736,8 @@ def build_where_clause(filters: dict, id_scope: list | None = None) -> dict:
         if filters.get("ssa_label"):
             conditions.append({"ssa_label": {"$eq": filters["ssa_label"]}})
         if filters.get("qual_type"):
-            # Expand label-level names ("HND") to all matching qual_type values
-            # ("HND", "HND/HTQ", "HNC/HND") — same mapping the tile path uses
-            expanded = []
-            for qt in filters["qual_type"]:
-                expanded.extend(QUAL_FILTER_MAP.get(qt, [qt]))
-            conditions.append({"qualification_type": {"$in": expanded}})
+            # qual_type is now canonical — no expansion needed
+            conditions.append({"qualification_type": {"$in": filters["qual_type"]}})
         if filters.get("mode"):
             conditions.append({"mode": {"$eq": filters["mode"]}})
         if filters.get("provider"):
@@ -1053,6 +1067,7 @@ def chat_explain(message: str, chat_history: list, max_tokens: int = 300) -> str
         return "I'm not able to answer that right now — try exploring the subject areas or qualifications above."
 
 
+# LEGACY — used by /chat only (see comment above)
 _SPECIFY_SEARCHES_TOOL = {
     "name": "specify_searches",
     "description": "Specify what searches to run to answer the user query. Called before any retrieval happens.",
@@ -1068,9 +1083,12 @@ _SPECIFY_SEARCHES_TOOL = {
                     "refine: narrowing current candidate set. "
                     "swerve: domain change mid-session. "
                     "out_of_scope: unrelated to courses or careers. "
-                    "explain: question about how qualifications work, what levels mean, "
-                    "progression routes, providers, or subject areas — needs a direct answer, "
-                    "not a search. Set searches to [] and collection_action to none."
+                    "explain: conceptual question about how qualifications work, what a level "
+                    "means, how progression routes work, or what subject areas cover — needs a "
+                    "direct answer, not a search. Only use this for genuinely conceptual questions. "
+                    "Do NOT use explain when the user wants to see, find, or browse courses or jobs "
+                    "(e.g. 'show me postgraduate courses', 'what courses are at level 7') — those "
+                    "are filter or intent queries. Set searches to [] and collection_action to none."
                 ),
             },
             "searches": {
@@ -1153,6 +1171,7 @@ _SPECIFY_SEARCHES_SYSTEM = (
     "For explain queries, set searches to [] and collection_action to none."
 )
 
+# LEGACY — used by /chat only (see comment above)
 _SELECT_RESULTS_TOOL = {
     "name": "select_results",
     "description": "Select the most relevant results from the search results provided.",
@@ -1183,6 +1202,7 @@ _SELECT_RESULTS_TOOL = {
 }
 
 
+# LEGACY — used by /chat only (see comment above)
 def chat_specify_searches(
     message: str,
     chat_history: list,
@@ -2369,10 +2389,9 @@ def serve_static(path):
 def api_welcome_data():
     """Return quals, SSA codes, and course-count matrix for the welcome flow.
 
-    quals — keys of QUAL_FILTER_MAP (display labels), filtered to those with
-            at least one course in the DB.
-    counts — { display_label: { ssa_code: n } } aggregated across all raw
-             qual_type values that map to each display label.
+    quals  — canonical qual_type values that have at least one active course.
+    counts — { qual_type: { ssa_code: n } } — qual_type is now the canonical
+             vocabulary so no mapping layer is needed.
     """
     conn = sqlite3.connect(FUTUREFINDER_DB)
     conn.row_factory = sqlite3.Row
@@ -2386,41 +2405,31 @@ def api_welcome_data():
         """)
         ssa_codes = [r["ssa"] for r in cur.fetchall()]
 
-        # Raw counts keyed by (qual_type, ssa_code) from the DB.
         cur.execute("""
             SELECT qual_type, CAST(ssa_code AS TEXT) AS ssa, COUNT(*) AS n
             FROM courses
             WHERE qual_type IS NOT NULL AND ssa_code IS NOT NULL AND is_active = 1
             GROUP BY qual_type, ssa_code
         """)
-        raw = {}
-        for row in cur.fetchall():
-            raw.setdefault(row["qual_type"], {})[row["ssa"]] = row["n"]
-
-        # Aggregate into display labels via QUAL_FILTER_MAP.
         counts = {}
-        for label, raw_types in QUAL_FILTER_MAP.items():
-            for qt in raw_types:
-                if qt in raw:
-                    bucket = counts.setdefault(label, {})
-                    for ssa, n in raw[qt].items():
-                        bucket[ssa] = bucket.get(ssa, 0) + n
+        for row in cur.fetchall():
+            counts.setdefault(row["qual_type"], {})[row["ssa"]] = row["n"]
 
-        # Only return labels that have at least one course.
-        quals = [label for label in QUAL_FILTER_MAP if label in counts]
+        quals = list(counts.keys())
 
         return jsonify({"quals": quals, "ssa_codes": ssa_codes, "counts": counts})
     finally:
         conn.close()
 
 
+# LEGACY — called by app_v2.js (tile-based UI). Not used by the chat-first frontend.
 @app.get("/search/courses")
 def search_courses():
     subject       = request.args.get("subject", "").strip()
     q             = request.args.get("q", "").strip()
     qualification = request.args.get("qualification", "").strip()
 
-    # Subject-tile path — direct SQLite lookup by SSA label, no embedding, no limit
+    # Subject-tile path — direct SQLite lookup by SSA code, no embedding, no limit
     if subject:
         ssa_code = SSA_MAP.get(subject)
         if not ssa_code:
@@ -2432,10 +2441,8 @@ def search_courses():
                "WHERE c.ssa_code = ? AND c.is_active = 1")
         params: list = [ssa_code]
         if qualification:
-            qual_values  = QUAL_FILTER_MAP.get(qualification, [qualification])
-            placeholders = ",".join("?" * len(qual_values))
-            sql += f" AND c.qual_type IN ({placeholders})"
-            params.extend(qual_values)
+            sql += " AND c.qual_type = ?"
+            params.append(qualification)
         sql += " ORDER BY c.course_title"
         rows = conn.execute(sql, params).fetchall()
         conn.close()
@@ -2775,7 +2782,7 @@ def course_detail_ff(course_id):
         return jsonify({"error": f"Course {course_id} not found"}), 404
 
     pathways_row = conn.execute(
-        "SELECT narrative_short, narrative, narrative_bullets, "
+        "SELECT narrative_short, narrative, career_narrative, "
         "card_jobs, curated_jobs, node_groups "
         "FROM course_career_pathways WHERE course_id = ?",
         (course_id,),
@@ -2828,7 +2835,7 @@ def course_detail_ff(course_id):
         "progression":        row["progression"] or "",
         "pathways": {
             "narrative_short":   pathways_row["narrative_short"]   if pathways_row else "",
-            "narrative_bullets": pathways_row["narrative_bullets"] if pathways_row else None,
+            "career_narrative":   pathways_row["career_narrative"]  if pathways_row else None,
             "card_jobs":         card_jobs_out,
             "curated_jobs":      curated_jobs_out,
             "node_groups":       json.loads(pathways_row["node_groups"])
@@ -3292,7 +3299,7 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
         candidates.append({
             "course_id": int(cid),
             "title":     meta.get("title", ""),
-            "qual_type": "",
+            "qual_type": meta.get("qual_type", ""),
             "level":     meta.get("level", ""),
             "preview":   (doc or "")[:300],
         })
@@ -3302,7 +3309,7 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
 
     # Format conversation context for Haiku
     conv_lines = []
-    for m in messages[-6:]:
+    for m in messages:
         role = "User" if m["role"] == "user" else "Assistant"
         conv_lines.append(f"{role}: {m['content']}")
     conversation_text = "\n".join(conv_lines)
@@ -3324,14 +3331,25 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
             "model":       HAIKU_MODEL,
             "max_tokens":  300,
             "temperature": 0.3,
-            "system": (
-                "You are selecting courses for a prospective student based on a short interview. "
-                "Read the conversation carefully and identify ALL aspects of what they want — "
-                "including when they express interest in a combination of areas (e.g. 'computers AND art'). "
-                "When the user names a mix, prioritise courses that span both areas over courses "
-                "that only cover one. Do not default to the most common or obvious interpretation "
-                "of a single keyword if the user has clearly expressed a cross-disciplinary interest."
-            ),
+            "system": _FF_BASE_SYSTEM + """
+
+## Your task
+
+Select 5–8 courses from the candidate list that best match what this specific
+student has said they want. The full conversation is your primary guide —
+read it from the beginning, not just the most recent messages.
+
+- Respect the subject the student established early in the conversation even
+  if later messages focus on level or qualification type.
+- If the student mentions a combination of interests, prioritise courses that
+  span both over courses that cover only one.
+- Use the qual_type and level shown for each candidate to match the student's
+  situation (e.g. someone with only GCSEs cannot yet enter a Level 4 course
+  without a Level 3 first; someone who already has a degree should see
+  postgraduate or higher-level options).
+- If no candidates match the student's subject well at the right level, select
+  the closest subject matches and note the level gap — do not silently
+  substitute an unrelated subject.""",
             "tools":       [_SELECT_COURSES_TOOL],
             "tool_choice": {"type": "tool", "name": "select_courses"},
             "messages":    [{"role": "user", "content": haiku_msg}],
@@ -3434,6 +3452,10 @@ def chat_welcome():
     })
 
 
+# LEGACY — /chat is not called by the current frontend (futurefinder-chat-first).
+# All chat goes through /chat/welcome. This endpoint and its supporting functions
+# (chat_specify_searches, chat_select_results, _SPECIFY_SEARCHES_TOOL, etc.) are
+# retained as reference for the planned welcome_chat filter extension.
 @app.post("/chat")
 def chat():
     cleanup_sessions()
