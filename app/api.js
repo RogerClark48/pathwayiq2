@@ -27,11 +27,11 @@ export function getWelcomeData() {
   return _welcomeData;
 }
 
-export async function postWelcomeChat(sessionId, message) {
+export async function postWelcomeChat(sessionId, message, savedItems) {
   const resp = await fetch('/chat/welcome', {
     method:  'POST',
     headers: { 'content-type': 'application/json' },
-    body:    JSON.stringify({ session_id: sessionId, message }),
+    body:    JSON.stringify({ session_id: sessionId, message, saved_items: savedItems || [] }),
   });
   if (!resp.ok) throw new Error(`/chat/welcome ${resp.status}`);
   return resp.json(); // { session_id, bot_response, pivot_to_courses }

@@ -60,17 +60,27 @@ SSA_MAP = {
 # ---------------------------------------------------------------------------
 
 QUAL_FILTER_MAP = {
-    'T Level':              ['T Level'],
-    'Apprenticeship':       ['Apprenticeship'],
-    'HNC':                  ['HNC', 'HNC/HTQ', 'HTQ', 'HNC/HND'],
-    'HND':                  ['HND', 'HND/HTQ', 'HNC/HND'],
-    'Foundation Degree':    ['FdA', 'FdSc'],
-    'CertHE / DipHE':       ['CertHE', 'DipHE'],
-    "Bachelor's Degree":    ['BA Hons', 'BEng Hons', 'BSc Hons'],
-    "Master's Degree":      ['MSc'],
-    'Access to HE':         ['Access to HE'],
-    'Short Course':         ['Award', 'Short Course'],
+    'T Level':                  ['T Level'],
+    'Access to HE':             ['Access to HE'],
+    'Apprenticeship':           ['Apprenticeship'],
+    'Higher Apprenticeship':    ['Higher Apprenticeship',
+                                 'Higher Apprenticeship, Degree Apprenticeship',
+                                 'FdSc, Higher Apprenticeship'],
+    'Degree Apprenticeship':    ['Degree Apprenticeship',
+                                 'Degree Apprenticeship, BSc Hons'],
+    'CertHE / DipHE':           ['CertHE', 'DipHE'],
+    'HNC':                      ['HNC', 'HTQ', 'HTQ, HNC', 'HNC/HTQ', 'HNC/HND'],
+    'HND':                      ['HND', 'HND, HTQ', 'HND/HTQ', 'HNC/HND'],
+    'Foundation Degree':        ['FdA', 'FdSc'],
+    "Bachelor's Degree":        ['BA Hons', 'BEng Hons', 'BSc Hons'],
+    "Master's Degree":          ['MSc', 'MSc, PgDip'],
+    'Short Course':             ['Award', 'Short Course'],
 }
+
+# ---------------------------------------------------------------------------
+# Subject areas — used in prompts to tell Haiku what subjects are covered
+# Each entry: (ssa_label, brief description of disciplines covered)
+# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Subject areas — used in prompts to tell Haiku what subjects are covered

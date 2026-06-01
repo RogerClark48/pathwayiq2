@@ -19,7 +19,7 @@ print(f"[startup] All env vars: {[k for k in os.environ.keys()]}", flush=True)
 
 from institution_config import (
     INSTITUTION_NAME, INSTITUTION_FULL_NAME, INSTITUTION_REGION,
-    PROVIDERS, SSA_MAP, QUAL_FILTER_MAP, SUBJECT_AREAS,
+    PROVIDERS, SSA_MAP, SUBJECT_AREAS,
 )
 
 # ---------------------------------------------------------------------------
@@ -28,7 +28,8 @@ from institution_config import (
 _BASE              = os.path.dirname(os.path.abspath(__file__))
 CHROMA_PATH        = os.path.join(_BASE, "chroma_store")
 JOBS_DB            = os.path.join(_BASE, "job_roles_asset.db")
-CONNECTIONS_DB     = os.path.join(_BASE, "connections.db")
+CONNECTIONS_DB     = os.path.join(_BASE, "connections.db")  # LEGACY — superseded by course_career_pathways in futurefinder.sqlite
+LMI_DB             = os.path.join(_BASE, "lmi.db")
 FUTUREFINDER_DB    = os.path.join(_BASE, "futurefinder.sqlite")
 ANALYTICS_DB       = os.path.join(_BASE, "analytics.db")
 VOYAGE_MODEL       = "voyage-3.5"
@@ -43,21 +44,44 @@ ANTHROPIC_URL      = "https://api.anthropic.com/v1/messages"
 HAIKU_MODEL        = "claude-haiku-4-5-20251001"
 SONNET_MODEL       = "claude-sonnet-4-6"
 
-_WELCOME_INTERVIEW_SYSTEM = """\
+# ---------------------------------------------------------------------------
+# Shared base — applies to every LLM call in the welcome flow.
+# Change tone, persona, or institution context here once; all calls pick it up.
+# ---------------------------------------------------------------------------
+_FF_BASE_SYSTEM = """\
 You are FutureFinder, an AI assistant helping prospective students explore
 courses and careers at the Greater Manchester Institute of Technology (GMIoT).
 
-Your job in this conversation is to understand what the person is interested
-in well enough to start suggesting relevant courses and careers. You are
-talking to someone who may be:
+You are talking to someone who may be:
 
 - A school leaver finishing A Levels or T Levels
 - An adult learner considering returning to study
 - Someone changing careers
 - Someone uncertain about what they want
 
-GMIoT offers courses from Level 3 (T level) through Level 7 (Masters), including
-apprenticeships at higher levels. There are no GCSEs or A Levels). The courses are STEM subjects for the most part.
+GMIoT offers courses from Level 3 (T Level) through Level 7 (Master's), including
+apprenticeships at higher levels. There are no GCSEs or A Levels on offer.
+The courses are STEM-focused with some creative and health subjects.
+
+Courses are retrieved from a database — do not invent course names or details
+from your own knowledge. Only work with courses the system provides to you.
+
+## Saved items
+
+The user may have saved courses or careers during this session. If so, they are
+listed in the context as "Saved items". Treat them as confirmed interest.
+
+- Use them as a reliable prior when the user's input is vague or ambiguous.
+- Do not re-recommend courses the user has already saved.
+- If saved items cluster around a subject or level, treat that as the user's
+  revealed preference — use it to break ties in selection, not to narrate back.
+- Only surface them explicitly when it genuinely adds something, e.g. if the
+  user says "I'm not sure where to go next", it is appropriate to say something
+  like "You've been looking at a few engineering courses — want me to suggest
+  what could come after those?"\
+"""
+
+_WELCOME_INTERVIEW_SYSTEM = _FF_BASE_SYSTEM + """
 
 ## Your goal
 
@@ -75,6 +99,7 @@ Any one of these is enough to pivot from interviewing to suggesting. Do not
 hold out for richer input.
 Courses can be filtered by the ssa_code field containing values (1 4 5 6 8 10 11 99)
 which are SSA codes.
+
 ## How to behave
 
 **Be warm, but stay on task.** Friendly in tone, but the goal is finding
@@ -209,8 +234,16 @@ Use [FILTER:N] for requests like:
 - "social science" → [FILTER:11]
 - "sustainability" → [FILTER:99]
 
+Do NOT use [FILTER:N] for anything other than these exact subject areas.
+In particular, never use [FILTER:N] for qualification types, levels, or providers —
+those must use [PIVOT_TO_COURSES]. For example:
+- "show me postgraduate courses" → [PIVOT_TO_COURSES] (not [FILTER:99])
+- "what level 4 courses are there?" → [PIVOT_TO_COURSES]
+- "show me apprenticeships" → [PIVOT_TO_COURSES]
+- "courses at Salford" → [PIVOT_TO_COURSES]
+
 Do NOT use [FILTER:N] for specific sub-disciplines or topics within an area —
-those should use [PIVOT_TO_COURSES] so the retrieval system can find the best
+those should also use [PIVOT_TO_COURSES] so the retrieval system can find the best
 matches. For example:
 - "show me electronics courses" → [PIVOT_TO_COURSES] (not [FILTER:4])
 - "I want to do software development" → [PIVOT_TO_COURSES] (not [FILTER:6])
@@ -273,6 +306,21 @@ same response.
 - Do not encourage personal disclosure ("tell me more about yourself").
 - Do not promise outcomes ("this course will definitely lead to...").
 - Do not use emojis.
+
+## Post-pivot advisory mode
+
+Once courses have been shown (you will be told in the dynamic note), the
+interview phase is over. Be genuinely helpful with whatever the user asks
+— draw on your knowledge to give real, useful answers. Do not narrow
+yourself to only course-finding or deflect things you can answer.
+
+**The advisor booking link is not a default deflection.** Use it only for
+genuinely institution-specific questions you cannot answer — specific
+application deadlines, whether a particular non-standard qualification is
+accepted, bursary details. Do not use it as a substitute for advice you
+can give yourself.
+
+**Keep responses concise** — 3–4 sentences. Still mobile-readable.
 """
 
 _SELECT_COURSES_TOOL = {
@@ -286,7 +334,7 @@ _SELECT_COURSES_TOOL = {
                 "items": {"type": "integer"},
                 "description": (
                     "Course IDs in order of relevance (most relevant first). "
-                    "Select 5 to 8 courses."
+                    "Select 3 to 8 courses. If fewer than 5 genuinely match the student's subject, return only the ones that do — do not pad with unrelated courses."
                 ),
             },
             "intro_text": {
@@ -317,7 +365,7 @@ PROGRESSION_SYSTEM_PROMPT = (
     "Do not use markdown code blocks, backticks, or any text outside the JSON object itself."
 )
 
-# SSA_MAP and QUAL_FILTER_MAP imported from institution_config
+# SSA_MAP imported from institution_config
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -331,9 +379,10 @@ AUTH_ENABLED     = os.environ.get("AUTH_ENABLED", "false").lower() == "true"
 vo = voyageai.Client(api_key=os.environ.get("VOYAGE_API_KEY"))
 
 chroma = chromadb.PersistentClient(path=CHROMA_PATH)
-jobs_col          = chroma.get_collection("gmiot_jobs")
-jobs_skills_col   = chroma.get_collection("gmiot_jobs_skills")
-match_courses_col = chroma.get_collection("match_courses")
+jobs_col               = chroma.get_collection("gmiot_jobs")
+jobs_skills_col        = chroma.get_collection("gmiot_jobs_skills")
+match_courses_col      = chroma.get_collection("match_courses")
+courses_learning_col   = chroma.get_collection("gmiot_courses_learning")  # LEGACY — only used by compute_skills_score via /courses/<id>/careers
 
 # Ensure job_progression_cache table exists (was dropped in v3 cleanup)
 _jpc_conn = sqlite3.connect(JOBS_DB)
@@ -348,16 +397,36 @@ _jpc_conn.execute("""
         explain_text   TEXT
     )
 """)
+for _col in ("courses_json TEXT", "explain_cache_version INTEGER", "courses_cache_version INTEGER"):
+    try:
+        _jpc_conn.execute(f"ALTER TABLE job_progression_cache ADD COLUMN {_col}")
+    except Exception:
+        pass  # column already exists
 _jpc_conn.commit()
 _jpc_conn.close()
+
+EXPLAIN_CACHE_VERSION  = 1  # bump when the explain prompt changes to force regeneration
+COURSES_CACHE_VERSION  = 2  # bump when the job_courses Haiku prompt changes
 
 CAUTION_DIVERGENCE_THRESHOLD  = 15  # domain% - skills% > this → caution flag
 CROSS_COLLECTION_MIN_SKILLS   = 72  # hard floor — connections below this are excluded
 CROSS_COLLECTION_MIN_DOMAIN   = 75  # hard floor — low domain score connections excluded
 
 # ---------------------------------------------------------------------------
-# Anthropic API wrapper — rate-limit detection and logging
+# Anthropic API wrapper — rate-limit detection and usage logging
 # ---------------------------------------------------------------------------
+
+# Cost per million tokens (USD) — update when Anthropic changes pricing
+_MODEL_PRICING = {
+    "claude-sonnet-4-6": {
+        "input": 3.00, "output": 15.00,
+        "cache_write": 3.75, "cache_read": 0.30,
+    },
+    "claude-haiku-4-5-20251001": {
+        "input": 0.80, "output": 4.00,
+        "cache_write": 1.00, "cache_read": 0.10,
+    },
+}
 
 class RateLimitError(Exception):
     pass
@@ -395,6 +464,30 @@ def _anthropic_post(payload: dict, call_site: str, session_id: str | None = None
             pass
         raise RateLimitError(call_site)
     resp.raise_for_status()
+    try:
+        model  = payload.get("model", "")
+        usage  = resp.json().get("usage", {})
+        inp    = usage.get("input_tokens", 0)
+        out    = usage.get("output_tokens", 0)
+        c_write = usage.get("cache_creation_input_tokens", 0)
+        c_read  = usage.get("cache_read_input_tokens", 0)
+        rates  = _MODEL_PRICING.get(model, {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0})
+        cost   = (
+            inp     * rates["input"]       / 1_000_000 +
+            out     * rates["output"]      / 1_000_000 +
+            c_write * rates["cache_write"] / 1_000_000 +
+            c_read  * rates["cache_read"]  / 1_000_000
+        )
+        conn   = sqlite3.connect(ANALYTICS_DB)
+        conn.execute(
+            "INSERT INTO api_usage (ts, session_id, call_site, model, input_tokens, output_tokens, cost_usd) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (datetime.utcnow().isoformat(), session_id or "system", call_site, model, inp + c_write + c_read, out, cost),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     return resp
 
 
@@ -451,6 +544,7 @@ def get_welcome_session(session_id: str) -> dict:
             _welcome_sessions[session_id] = {
                 "messages":           [],
                 "interview_turn_count": 0,
+                "pivot_done":         False,
                 "created_at":         now,
                 "last_used_at":       now,
             }
@@ -471,7 +565,7 @@ def cleanup_welcome_sessions() -> None:
                   f"Active: {len(_welcome_sessions)}", flush=True)
 
 
-def welcome_chat_llm(session_id: str, message: str) -> dict:
+def welcome_chat_llm(session_id: str, message: str, saved_items: list | None = None) -> dict:
     """
     Append user message to the welcome session, call Sonnet, strip the
     [PIVOT_TO_COURSES] marker, increment turn count, persist bot reply.
@@ -481,15 +575,40 @@ def welcome_chat_llm(session_id: str, message: str) -> dict:
 
     with _welcome_sessions_lock:
         sess["messages"].append({"role": "user", "content": message})
-        history = list(sess["messages"][-6:])  # last 6 turns
+        history = list(sess["messages"])
+
+    saved_items = saved_items or []
+    saved_note  = ""
+    if saved_items:
+        titles = ", ".join(i["title"] for i in saved_items if i.get("title"))
+        if titles:
+            saved_note = f"\n\nSaved items: {titles}"
 
     print(f"[welcome_chat] session={session_id[:8]}... turn={sess['interview_turn_count']+1} "
-          f"msg={message!r}", flush=True)
+          f"msg={message!r} saved={len(saved_items)}", flush=True)
 
+    if sess.get("pivot_done"):
+        dynamic_note = "\n\n[Courses have been shown. You are now in advisory mode — see ## Post-pivot advisory mode in your instructions.]" + saved_note
+    else:
+        dynamic_note = (
+            f"\n\n[This is interview turn {sess['interview_turn_count'] + 1}. "
+            f"At turn 4 or beyond with no usable input, use the graceful exit.]"
+            + saved_note
+        )
     try:
         resp = _anthropic_post({
-            "model":      SONNET_MODEL,
-            "system":     _WELCOME_INTERVIEW_SYSTEM + f"\n\n[This is interview turn {sess['interview_turn_count'] + 1}. At turn 4 or beyond with no usable input, use the graceful exit.]",
+            "model":    SONNET_MODEL,
+            "system": [
+                {
+                    "type": "text",
+                    "text": _WELCOME_INTERVIEW_SYSTEM,
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {
+                    "type": "text",
+                    "text": dynamic_note,
+                },
+            ],
             "messages":   history,
             "max_tokens": 200,
             "temperature": 0.5,
@@ -560,6 +679,8 @@ def _cosine_similarity(vec_a, vec_b) -> float:
     return float(np.dot(a, b) / norm)
 
 
+# LEGACY — called only by /courses/<id>/careers, which is not used by the chat-first frontend.
+# Course→job connections are now served from course_career_pathways in futurefinder.sqlite.
 def compute_skills_score(course_id, job_id) -> int | None:
     """
     Skills alignment score: what_you_will_learn (course) vs skills_required (job).
@@ -610,11 +731,23 @@ def job_row(job_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def lmi_employer_text(job_id: int) -> str | None:
+    try:
+        conn = sqlite3.connect(LMI_DB)
+        row = conn.execute(
+            "SELECT employer_text FROM job_employer_text WHERE job_id = ?", (job_id,)
+        ).fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
 def format_course_from_db(db: dict, match_score: int) -> dict:
     """Build a course result dict from a futurefinder.sqlite courses row."""
     return {
         "type":               "course",
-        "id":                 str(db["course_id"]),
+        "id":                 db["course_id"],
         "title":              db["course_title"],
         "provider":           db.get("provider_name") or "",
         "level":              db.get("level"),
@@ -634,10 +767,8 @@ def keyword_course_search(q: str, qualification: str | None) -> list[dict]:
            "WHERE c.course_title LIKE ? AND c.is_active = 1")
     params: list = [f"%{q}%"]
     if qualification:
-        qual_values = QUAL_FILTER_MAP.get(qualification, [qualification])
-        placeholders = ",".join("?" * len(qual_values))
-        sql += f" AND c.qual_type IN ({placeholders})"
-        params.extend(qual_values)
+        sql += " AND c.qual_type = ?"
+        params.append(qualification)
     rows = conn.execute(sql, params).fetchall()
     conn.close()
 
@@ -705,6 +836,8 @@ def merge_candidates(list_a: list, list_b: list) -> list:
     return sorted(seen.values(), key=lambda x: x["score"], reverse=True)[:TOP_N_CANDIDATES]
 
 
+# Currently used by legacy /chat. Retained — intended for reuse in welcome_chat
+# filter extension (SQL-from-chat-text feature).
 def build_where_clause(filters: dict, id_scope: list | None = None) -> dict:
     """Build a Chroma where clause for course searches.
 
@@ -718,12 +851,8 @@ def build_where_clause(filters: dict, id_scope: list | None = None) -> dict:
         if filters.get("ssa_label"):
             conditions.append({"ssa_label": {"$eq": filters["ssa_label"]}})
         if filters.get("qual_type"):
-            # Expand label-level names ("HND") to all matching qual_type values
-            # ("HND", "HND/HTQ", "HNC/HND") — same mapping the tile path uses
-            expanded = []
-            for qt in filters["qual_type"]:
-                expanded.extend(QUAL_FILTER_MAP.get(qt, [qt]))
-            conditions.append({"qualification_type": {"$in": expanded}})
+            # qual_type is now canonical — no expansion needed
+            conditions.append({"qualification_type": {"$in": filters["qual_type"]}})
         if filters.get("mode"):
             conditions.append({"mode": {"$eq": filters["mode"]}})
         if filters.get("provider"):
@@ -1053,6 +1182,7 @@ def chat_explain(message: str, chat_history: list, max_tokens: int = 300) -> str
         return "I'm not able to answer that right now — try exploring the subject areas or qualifications above."
 
 
+# LEGACY — used by /chat only (see comment above)
 _SPECIFY_SEARCHES_TOOL = {
     "name": "specify_searches",
     "description": "Specify what searches to run to answer the user query. Called before any retrieval happens.",
@@ -1068,9 +1198,12 @@ _SPECIFY_SEARCHES_TOOL = {
                     "refine: narrowing current candidate set. "
                     "swerve: domain change mid-session. "
                     "out_of_scope: unrelated to courses or careers. "
-                    "explain: question about how qualifications work, what levels mean, "
-                    "progression routes, providers, or subject areas — needs a direct answer, "
-                    "not a search. Set searches to [] and collection_action to none."
+                    "explain: conceptual question about how qualifications work, what a level "
+                    "means, how progression routes work, or what subject areas cover — needs a "
+                    "direct answer, not a search. Only use this for genuinely conceptual questions. "
+                    "Do NOT use explain when the user wants to see, find, or browse courses or jobs "
+                    "(e.g. 'show me postgraduate courses', 'what courses are at level 7') — those "
+                    "are filter or intent queries. Set searches to [] and collection_action to none."
                 ),
             },
             "searches": {
@@ -1153,6 +1286,7 @@ _SPECIFY_SEARCHES_SYSTEM = (
     "For explain queries, set searches to [] and collection_action to none."
 )
 
+# LEGACY — used by /chat only (see comment above)
 _SELECT_RESULTS_TOOL = {
     "name": "select_results",
     "description": "Select the most relevant results from the search results provided.",
@@ -1183,6 +1317,7 @@ _SELECT_RESULTS_TOOL = {
 }
 
 
+# LEGACY — used by /chat only (see comment above)
 def chat_specify_searches(
     message: str,
     chat_history: list,
@@ -2030,6 +2165,42 @@ def admin_analytics():
         for r in course_rows
     ) or "<tr><td colspan='2' class='empty'>No data</td></tr>"
 
+    # API cost
+    usage_rows = conn.execute(
+        f"SELECT model, SUM(input_tokens) as inp, SUM(output_tokens) as out, SUM(cost_usd) as cost "
+        f"FROM api_usage WHERE {ts_filter.replace('ts', 'ts')} GROUP BY model ORDER BY cost DESC",
+        ts_args
+    ).fetchall()
+    total_cost = sum(r["cost"] for r in usage_rows)
+    total_calls = conn.execute(
+        f"SELECT COUNT(*) as n FROM api_usage WHERE {ts_filter}", ts_args
+    ).fetchone()["n"]
+    sessions_n = summary["sessions"] or 1
+    cost_per_session = total_cost / sessions_n if sessions_n else 0
+
+    if usage_rows:
+        cost_rows_html = ""
+        for r in usage_rows:
+            rates = _MODEL_PRICING.get(r["model"], {"input": 0, "output": 0})
+            cost_rows_html += (
+                f"<tr><td>{r['model']}</td>"
+                f"<td class='num'>{r['inp']:,}</td>"
+                f"<td class='num'>{r['out']:,}</td>"
+                f"<td class='num'>${r['cost']:.4f}</td></tr>\n"
+            )
+        cost_section = (
+            f'<h2>API cost estimate ({period_label})</h2>'
+            f'<p><strong>Total: ${total_cost:.4f}</strong> &nbsp;·&nbsp; '
+            f'{total_calls:,} calls &nbsp;·&nbsp; '
+            f'${cost_per_session:.4f} per session</p>'
+            f'<table><thead><tr><th>Model</th><th class="num">Input tokens</th>'
+            f'<th class="num">Output tokens</th><th class="num">Est. cost (USD)</th></tr></thead>'
+            f'<tbody>{cost_rows_html}</tbody></table>'
+            f'<p class="note">Voyage AI embedding costs not included. Prices based on published Anthropic rates.</p>'
+        )
+    else:
+        cost_section = '<h2>API cost estimate</h2><p class="empty">No API calls recorded yet for this period.</p>'
+
     # Rate limit events
     rl_rows = q(
         "SELECT ts, meta FROM events WHERE event='rate_limit' ORDER BY ts DESC LIMIT 20"
@@ -2072,6 +2243,7 @@ def admin_analytics():
         .replace("{{FUNNEL_ROWS}}", funnel_rows)
         .replace("{{CAREERS_TABLE}}", careers_table)
         .replace("{{COURSES_TABLE}}", courses_table)
+        .replace("{{COST_SECTION}}", cost_section)
         .replace("{{RL_SECTION}}", rl_section)
     )
     return make_response(html)
@@ -2296,6 +2468,7 @@ _ANALYTICS_PAGE_HTML = """<!DOCTYPE html>
   .bar-wrap { flex: 1; display: flex; align-items: center; gap: 6px; }
   .bar { height: 16px; background: #0d9488; border-radius: 3px; min-width: 2px; }
   .bar-val { font-size: 12px; color: #475569; }
+  p.note { font-size: 12px; color: #94a3b8; margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -2340,6 +2513,8 @@ _ANALYTICS_PAGE_HTML = """<!DOCTYPE html>
   </div>
 </div>
 
+{{COST_SECTION}}
+
 {{RL_SECTION}}
 
 </body>
@@ -2369,10 +2544,9 @@ def serve_static(path):
 def api_welcome_data():
     """Return quals, SSA codes, and course-count matrix for the welcome flow.
 
-    quals — keys of QUAL_FILTER_MAP (display labels), filtered to those with
-            at least one course in the DB.
-    counts — { display_label: { ssa_code: n } } aggregated across all raw
-             qual_type values that map to each display label.
+    quals  — canonical qual_type values that have at least one active course.
+    counts — { qual_type: { ssa_code: n } } — qual_type is now the canonical
+             vocabulary so no mapping layer is needed.
     """
     conn = sqlite3.connect(FUTUREFINDER_DB)
     conn.row_factory = sqlite3.Row
@@ -2386,41 +2560,31 @@ def api_welcome_data():
         """)
         ssa_codes = [r["ssa"] for r in cur.fetchall()]
 
-        # Raw counts keyed by (qual_type, ssa_code) from the DB.
         cur.execute("""
             SELECT qual_type, CAST(ssa_code AS TEXT) AS ssa, COUNT(*) AS n
             FROM courses
             WHERE qual_type IS NOT NULL AND ssa_code IS NOT NULL AND is_active = 1
             GROUP BY qual_type, ssa_code
         """)
-        raw = {}
-        for row in cur.fetchall():
-            raw.setdefault(row["qual_type"], {})[row["ssa"]] = row["n"]
-
-        # Aggregate into display labels via QUAL_FILTER_MAP.
         counts = {}
-        for label, raw_types in QUAL_FILTER_MAP.items():
-            for qt in raw_types:
-                if qt in raw:
-                    bucket = counts.setdefault(label, {})
-                    for ssa, n in raw[qt].items():
-                        bucket[ssa] = bucket.get(ssa, 0) + n
+        for row in cur.fetchall():
+            counts.setdefault(row["qual_type"], {})[row["ssa"]] = row["n"]
 
-        # Only return labels that have at least one course.
-        quals = [label for label in QUAL_FILTER_MAP if label in counts]
+        quals = list(counts.keys())
 
         return jsonify({"quals": quals, "ssa_codes": ssa_codes, "counts": counts})
     finally:
         conn.close()
 
 
+# LEGACY — called by app_v2.js (tile-based UI). Not used by the chat-first frontend.
 @app.get("/search/courses")
 def search_courses():
     subject       = request.args.get("subject", "").strip()
     q             = request.args.get("q", "").strip()
     qualification = request.args.get("qualification", "").strip()
 
-    # Subject-tile path — direct SQLite lookup by SSA label, no embedding, no limit
+    # Subject-tile path — direct SQLite lookup by SSA code, no embedding, no limit
     if subject:
         ssa_code = SSA_MAP.get(subject)
         if not ssa_code:
@@ -2432,10 +2596,8 @@ def search_courses():
                "WHERE c.ssa_code = ? AND c.is_active = 1")
         params: list = [ssa_code]
         if qualification:
-            qual_values  = QUAL_FILTER_MAP.get(qualification, [qualification])
-            placeholders = ",".join("?" * len(qual_values))
-            sql += f" AND c.qual_type IN ({placeholders})"
-            params.extend(qual_values)
+            sql += " AND c.qual_type = ?"
+            params.append(qualification)
         sql += " ORDER BY c.course_title"
         rows = conn.execute(sql, params).fetchall()
         conn.close()
@@ -2528,6 +2690,9 @@ def search_jobs():
     return jsonify({"query": q, "results": results})
 
 
+# LEGACY — not called by the chat-first frontend. Course detail uses /courses/<id>/detail
+# which reads course_career_pathways. This endpoint and connections.db can be removed
+# once confirmed no other clients depend on it.
 @app.get("/courses/<int:course_id>/careers")
 def course_careers(course_id):
     limit = min(int(request.args.get("limit", 3)), 20)
@@ -2651,6 +2816,29 @@ def course_careers(course_id):
 def job_courses(job_id):
     limit = min(int(request.args.get("limit", 5)), 20)
 
+    # --- Cache check ---
+    _jpc = sqlite3.connect(JOBS_DB)
+    _jpc.row_factory = sqlite3.Row
+    cached_row = _jpc.execute(
+        "SELECT courses_json, courses_cache_version FROM job_progression_cache "
+        "WHERE job_id = ? AND courses_json IS NOT NULL",
+        (job_id,)
+    ).fetchone()
+    if cached_row and cached_row["courses_cache_version"] == COURSES_CACHE_VERSION:
+        _jpc.close()
+        print(f"[job_courses] job_id={job_id} cache hit (v{COURSES_CACHE_VERSION})", flush=True)
+        selected_ids = json.loads(cached_row["courses_json"])
+        results = []
+        for cid in selected_ids[:limit]:
+            db = ff_course_row(str(cid))
+            if db:
+                course = format_course_from_db(db, None)
+                if course:
+                    results.append(course)
+        j = job_row(str(job_id))
+        return jsonify({"job_id": job_id, "job_title": j["title"] if j else "", "results": results})
+    _jpc.close()
+
     # Lift the skills chunk vector from the jobs collection
     stored = jobs_col.get(
         ids=[f"{job_id}_skills"],
@@ -2729,7 +2917,7 @@ def job_courses(job_id):
             (b for b in resp.json()["content"] if b["type"] == "tool_use"), None
         )
         if tool_use:
-            selected_ids = [str(i) for i in (tool_use["input"].get("selected_course_ids") or [])]
+            selected_ids = [str(i) for i in (tool_use["input"].get("selected_course_ids") or [])]  # strings to match Chroma cid keys
             print(f"[job_courses] Haiku selected {len(selected_ids)} courses for job {job_id}", flush=True)
     except RateLimitError:
         print(f"[job_courses] rate limited — falling back to Chroma top {limit}", flush=True)
@@ -2748,6 +2936,30 @@ def job_courses(job_id):
         course = format_course_from_db(c["db"], c["score"])
         if course:
             results.append(course)
+
+    # Cache the ordered course IDs for future requests
+    if selected_ids or ordered:
+        ids_to_cache = selected_ids if selected_ids else [c["cid"] for c in ordered]
+        try:
+            _jpc = sqlite3.connect(JOBS_DB)
+            existing = _jpc.execute(
+                "SELECT job_id FROM job_progression_cache WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            if existing:
+                _jpc.execute(
+                    "UPDATE job_progression_cache SET courses_json = ?, courses_cache_version = ? WHERE job_id = ?",
+                    (json.dumps(ids_to_cache), COURSES_CACHE_VERSION, job_id)
+                )
+            else:
+                _jpc.execute(
+                    "INSERT INTO job_progression_cache (job_id, courses_json, courses_cache_version) VALUES (?, ?, ?)",
+                    (job_id, json.dumps(ids_to_cache), COURSES_CACHE_VERSION)
+                )
+            _jpc.commit()
+            _jpc.close()
+            print(f"[job_courses] job_id={job_id} cached {len(ids_to_cache)} course IDs", flush=True)
+        except Exception as e:
+            print(f"[job_courses] cache write failed ({e})", flush=True)
 
     return jsonify({
         "job_id":    job_id,
@@ -2775,7 +2987,7 @@ def course_detail_ff(course_id):
         return jsonify({"error": f"Course {course_id} not found"}), 404
 
     pathways_row = conn.execute(
-        "SELECT narrative_short, narrative, narrative_bullets, "
+        "SELECT narrative_short, narrative, career_narrative, "
         "card_jobs, curated_jobs, node_groups "
         "FROM course_career_pathways WHERE course_id = ?",
         (course_id,),
@@ -2828,7 +3040,7 @@ def course_detail_ff(course_id):
         "progression":        row["progression"] or "",
         "pathways": {
             "narrative_short":   pathways_row["narrative_short"]   if pathways_row else "",
-            "narrative_bullets": pathways_row["narrative_bullets"] if pathways_row else None,
+            "career_narrative":   pathways_row["career_narrative"]  if pathways_row else None,
             "card_jobs":         card_jobs_out,
             "curated_jobs":      curated_jobs_out,
             "node_groups":       json.loads(pathways_row["node_groups"])
@@ -2881,6 +3093,7 @@ def job_detail(job_id):
         "salary":              db.get("salary") or "",
         "career_progression":  db.get("progression") or "",
         "has_progression":     bool(db.get("overview")),
+        "employer_text":       lmi_employer_text(job_id),
     })
 
 
@@ -3054,12 +3267,13 @@ def job_explain(job_id):
 
     # Check cache
     cached = jobs_conn.execute(
-        "SELECT explain_text FROM job_progression_cache WHERE job_id = ? AND explain_text IS NOT NULL",
+        "SELECT explain_text, explain_cache_version FROM job_progression_cache "
+        "WHERE job_id = ? AND explain_text IS NOT NULL",
         (job_id,)
     ).fetchone()
-    if cached:
+    if cached and cached["explain_cache_version"] == EXPLAIN_CACHE_VERSION:
         jobs_conn.close()
-        print(f"[explain] job_id={job_id} cache hit", flush=True)
+        print(f"[explain] job_id={job_id} cache hit (v{EXPLAIN_CACHE_VERSION})", flush=True)
         return jsonify({"text": cached["explain_text"]})
 
     # Get job title
@@ -3087,13 +3301,13 @@ def job_explain(job_id):
     try:
         if existing:
             jobs_conn.execute(
-                "UPDATE job_progression_cache SET explain_text = ? WHERE job_id = ?",
-                (text, job_id)
+                "UPDATE job_progression_cache SET explain_text = ?, explain_cache_version = ? WHERE job_id = ?",
+                (text, EXPLAIN_CACHE_VERSION, job_id)
             )
         else:
             jobs_conn.execute(
-                "INSERT INTO job_progression_cache (job_id, explain_text) VALUES (?, ?)",
-                (job_id, text)
+                "INSERT INTO job_progression_cache (job_id, explain_text, explain_cache_version) VALUES (?, ?, ?)",
+                (job_id, text, EXPLAIN_CACHE_VERSION)
             )
         jobs_conn.commit()
     except Exception as e:
@@ -3241,12 +3455,13 @@ def get_filtered_courses(ssa_code: int) -> dict:
     return {"intro_text": "Here are all the courses in that subject area at GMIoT.", "courses": courses}
 
 
-def retrieve_courses_for_pivot(session_id: str) -> dict:
+def retrieve_courses_for_pivot(session_id: str, saved_items: list | None = None) -> dict:
     """
     Build a semantic query from the user's welcome conversation turns, embed it,
     retrieve top Chroma course candidates, then use Haiku to select the best 5-8.
     Returns {"intro_text": str, "courses": [{"course_id", "course_title", "preview_text"}]}.
     """
+    saved_items = saved_items or []
     _empty = {
         "intro_text": "I couldn't find good matches yet — try telling me a bit more about what interests you.",
         "courses": [],
@@ -3292,7 +3507,7 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
         candidates.append({
             "course_id": int(cid),
             "title":     meta.get("title", ""),
-            "qual_type": "",
+            "qual_type": meta.get("qual_type", ""),
             "level":     meta.get("level", ""),
             "preview":   (doc or "")[:300],
         })
@@ -3302,18 +3517,25 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
 
     # Format conversation context for Haiku
     conv_lines = []
-    for m in messages[-6:]:
+    for m in messages:
         role = "User" if m["role"] == "user" else "Assistant"
         conv_lines.append(f"{role}: {m['content']}")
     conversation_text = "\n".join(conv_lines)
+
+    saved_section = ""
+    if saved_items:
+        saved_titles = ", ".join(i["title"] for i in saved_items if i.get("title"))
+        if saved_titles:
+            saved_section = f"\n\nSaved items (do not re-recommend these): {saved_titles}"
 
     candidate_lines = [
         f"{c['course_id']} | {c['title']} | {c['qual_type']} Level {c['level']} | {c['preview']}"
         for c in candidates
     ]
     haiku_msg = (
-        f"Conversation:\n{conversation_text}\n\n"
-        f"Candidate courses (ID | Title | Qual Level | Preview):\n"
+        f"Conversation:\n{conversation_text}"
+        + saved_section
+        + f"\n\nCandidate courses (ID | Title | Qual Level | Preview):\n"
         + "\n".join(candidate_lines)
         + "\n\nUsing the conversation above as your guide, select the 5–8 courses that best match what this specific user has said they want. The conversation is your primary input — read it carefully before selecting."
     )
@@ -3324,14 +3546,26 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
             "model":       HAIKU_MODEL,
             "max_tokens":  300,
             "temperature": 0.3,
-            "system": (
-                "You are selecting courses for a prospective student based on a short interview. "
-                "Read the conversation carefully and identify ALL aspects of what they want — "
-                "including when they express interest in a combination of areas (e.g. 'computers AND art'). "
-                "When the user names a mix, prioritise courses that span both areas over courses "
-                "that only cover one. Do not default to the most common or obvious interpretation "
-                "of a single keyword if the user has clearly expressed a cross-disciplinary interest."
-            ),
+            "system": _FF_BASE_SYSTEM + """
+
+## Your task
+
+Select 5–8 courses from the candidate list that best match what this specific
+student has said they want. The full conversation is your primary guide —
+read it from the beginning, not just the most recent messages.
+
+- Respect the subject the student established early in the conversation even
+  if later messages focus on level or qualification type.
+- If the student mentions a combination of interests, prioritise courses that
+  span both over courses that cover only one.
+- Use the qual_type and level shown for each candidate to match the student's
+  situation (e.g. someone with only GCSEs cannot yet enter a Level 4 course
+  without a Level 3 first; someone who already has a degree should see
+  postgraduate or higher-level options).
+- If fewer than 5 candidates genuinely match the student's subject, return only
+  the ones that do. Do not pad with unrelated courses to hit a minimum count —
+  3 good matches is better than 6 with fillers. If there is a level gap, note
+  it in intro_text.""",
             "tools":       [_SELECT_COURSES_TOOL],
             "tool_choice": {"type": "tool", "name": "select_courses"},
             "messages":    [{"role": "user", "content": haiku_msg}],
@@ -3394,9 +3628,10 @@ def retrieve_courses_for_pivot(session_id: str) -> dict:
 @app.post("/chat/welcome")
 def chat_welcome():
     cleanup_welcome_sessions()
-    body       = request.get_json(force=True) or {}
-    message    = (body.get("message") or "").strip()
-    session_id = (body.get("session_id") or "").strip()
+    body        = request.get_json(force=True) or {}
+    message     = (body.get("message") or "").strip()
+    session_id  = (body.get("session_id") or "").strip()
+    saved_items = body.get("saved_items") or []
 
     if not message:
         return jsonify({"error": "message is required"}), 400
@@ -3412,7 +3647,7 @@ def chat_welcome():
             "course_list":      get_sample_courses(),
         })
 
-    result = welcome_chat_llm(session_id, message)
+    result = welcome_chat_llm(session_id, message, saved_items)
     if result["bot_response"] is None:
         return jsonify({"error": "llm_error"}), 502
 
@@ -3422,7 +3657,12 @@ def chat_welcome():
         course_list = get_filtered_courses(result["filter_code"])
         pivot = True
     elif pivot:
-        course_list = retrieve_courses_for_pivot(session_id)
+        course_list = retrieve_courses_for_pivot(session_id, saved_items)
+
+    if pivot:
+        sess = get_welcome_session(session_id)
+        with _welcome_sessions_lock:
+            sess["pivot_done"] = True
 
     return jsonify({
         "session_id":       session_id,
@@ -3434,6 +3674,10 @@ def chat_welcome():
     })
 
 
+# LEGACY — /chat is not called by the current frontend (futurefinder-chat-first).
+# All chat goes through /chat/welcome. This endpoint and its supporting functions
+# (chat_specify_searches, chat_select_results, _SPECIFY_SEARCHES_TOOL, etc.) are
+# retained as reference for the planned welcome_chat filter extension.
 @app.post("/chat")
 def chat():
     cleanup_sessions()
@@ -3630,6 +3874,17 @@ def _init_analytics_db():
             "expires_at TEXT, "
             "created_at TEXT NOT NULL, "
             "used_count INTEGER NOT NULL DEFAULT 0)"
+        )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS api_usage ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "ts TEXT NOT NULL, "
+            "session_id TEXT, "
+            "call_site TEXT NOT NULL, "
+            "model TEXT NOT NULL, "
+            "input_tokens INTEGER NOT NULL, "
+            "output_tokens INTEGER NOT NULL, "
+            "cost_usd REAL NOT NULL)"
         )
         conn.commit()
         conn.close()
