@@ -4,8 +4,8 @@ import { state } from '../state.js';
 import { go }    from '../router.js';
 import { logEvent } from '../analytics.js';
 
-export function CourseListView() {
-  const data    = state.courseList;
+export function CourseListView(slices = {}) {
+  const data    = slices.courseList || state.courseList;
   const courses = data?.courses || [];
 
   const el = document.createElement('div');

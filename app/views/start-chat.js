@@ -47,11 +47,11 @@ function makeBubble(role, text) {
   return wrap;
 }
 
-function makeCtaButton(text) {
+function makeCtaButton(text, courseList) {
   const btn = document.createElement('button');
   btn.className = 'chat-cta-btn';
   btn.textContent = text;
-  btn.addEventListener('click', () => go('course-list'));
+  btn.addEventListener('click', () => go('course-list', { courseList }));
   return btn;
 }
 
@@ -150,7 +150,7 @@ export function StartChatView() {
   // Render existing messages.
   state.chat.messages.forEach(msg => {
     if (msg.role === 'cta') {
-      messagesEl.appendChild(makeCtaButton(msg.text));
+      messagesEl.appendChild(makeCtaButton(msg.text, msg.courseList));
     } else {
       messagesEl.appendChild(makeBubble(msg.role, msg.text));
     }
@@ -216,7 +216,7 @@ export function StartChatView() {
     chatInput.disabled = true;
 
     try {
-      const data = await postWelcomeChat(state.session.id, text);
+      const data = await postWelcomeChat(state.session.id, text, state.saved.items);
       thinkingEl.remove();
       const reply = data.bot_response;
       state.chat.messages.push({ role: 'bot', text: reply });
@@ -233,8 +233,8 @@ export function StartChatView() {
 
       if (data.pivot_to_courses && data.course_list) {
         setCourseList(data.course_list);
-        state.chat.messages.push({ role: 'cta', text: 'See courses →' });
-        messagesEl.appendChild(makeCtaButton('See courses →'));
+        state.chat.messages.push({ role: 'cta', text: 'See courses →', courseList: data.course_list });
+        messagesEl.appendChild(makeCtaButton('See courses →', data.course_list));
       }
       scrollBottom();
     } catch (err) {

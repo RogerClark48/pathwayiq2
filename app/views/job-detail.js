@@ -96,12 +96,12 @@ export function JobDetailView(slices = {}) {
       wireRevealButton(
         content.querySelector('#jd-progression-section'),
         'Career path',
-        () => loadExplain(content, jobId),
+        (panel) => loadExplain(panel, jobId),
       );
       wireRevealButton(
         content.querySelector('#jd-courses-section'),
         'Courses that lead here',
-        () => loadCourses(content, jobId),
+        (panel) => loadCourses(panel, jobId),
       );
     })
     .catch(err => {
@@ -196,6 +196,13 @@ function renderMain(content, d) {
     content.appendChild(link);
   }
 
+  // ── Working in Greater Manchester ────────────────────────────────────────
+  if (d.employer_text) {
+    content.appendChild(divider());
+    content.appendChild(heading('cd-section-heading', 'Working in Greater Manchester'));
+    content.appendChild(para('cd-body', d.employer_text));
+  }
+
   // ── On-demand sections ───────────────────────────────────────────────────
   const progSection = document.createElement('div');
   progSection.id = 'jd-progression-section';
@@ -216,22 +223,41 @@ function wireRevealButton(section, label, onReveal) {
   const btn = document.createElement('button');
   btn.className = 'jd-reveal-btn';
   btn.textContent = label;
+  btn.dataset.open = 'false';
   section.appendChild(btn);
 
+  const panel = document.createElement('div');
+  panel.hidden = true;
+  section.appendChild(panel);
+  section.appendChild(btn);  // button always lives after the panel
+
+  let loaded = false;
+
   btn.addEventListener('click', () => {
-    btn.remove();
-    onReveal();
-  }, { once: true });
+    const open = btn.dataset.open === 'true';
+    if (!open) {
+      btn.dataset.open = 'true';
+      btn.textContent = 'Less';
+      panel.hidden = false;
+      if (!loaded) {
+        loaded = true;
+        onReveal(panel);
+      }
+    } else {
+      btn.dataset.open = 'false';
+      btn.textContent = label;
+      panel.hidden = true;
+    }
+  });
 }
 
-function loadExplain(content, jobId) {
-  const section = content.querySelector('#jd-progression-section');
-  if (!section) return;
+function loadExplain(panel, jobId) {
+  panel.appendChild(heading('cd-section-heading', 'Career path'));
 
   const loading = document.createElement('p');
   loading.className = 'cd-loading';
   loading.textContent = 'Loading career path…';
-  section.appendChild(loading);
+  panel.appendChild(loading);
 
   fetch(`/jobs/${jobId}/explain`)
     .then(r => r.json())
@@ -242,36 +268,27 @@ function loadExplain(content, jobId) {
         const p = document.createElement('p');
         p.className = 'cd-body cd-muted';
         p.textContent = 'No career pathway information available.';
-        section.appendChild(p);
+        panel.appendChild(p);
         return;
       }
       logEvent('progression_open', 'job', jobId, null);
       const narr = document.createElement('p');
       narr.className = 'cd-body';
       narr.textContent = text;
-      section.appendChild(narr);
+      panel.appendChild(narr);
     })
     .catch(() => {
       loading.remove();
     });
 }
 
-function loadCourses(content, jobId) {
-  const section = content.querySelector('#jd-courses-section');
-  if (!section) return;
-
-  section.appendChild(document.createElement('hr')).className = 'cd-divider';
-  section.appendChild((() => {
-    const h = document.createElement('h3');
-    h.className = 'cd-section-heading';
-    h.textContent = 'Courses that lead here';
-    return h;
-  })());
+function loadCourses(panel, jobId) {
+  panel.appendChild(heading('cd-section-heading', 'Courses that lead here'));
 
   const loading = document.createElement('p');
   loading.className = 'cd-loading';
   loading.textContent = 'Finding relevant courses…';
-  section.appendChild(loading);
+  panel.appendChild(loading);
 
   fetch(`/jobs/${jobId}/courses?limit=5`)
     .then(r => r.json())
@@ -282,7 +299,7 @@ function loadCourses(content, jobId) {
         const p = document.createElement('p');
         p.className = 'cd-body cd-muted';
         p.textContent = 'No matching courses found.';
-        section.appendChild(p);
+        panel.appendChild(p);
         return;
       }
 
@@ -364,8 +381,8 @@ function loadCourses(content, jobId) {
         list.appendChild(item);
       });
 
-      section.appendChild(list);
-      section.appendChild(preview);
+      panel.appendChild(list);
+      panel.appendChild(preview);
     })
     .catch(() => {
       loading.remove();
