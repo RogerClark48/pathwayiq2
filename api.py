@@ -48,6 +48,31 @@ SONNET_MODEL       = "claude-sonnet-4-6"
 # Shared base — applies to every LLM call in the welcome flow.
 # Change tone, persona, or institution context here once; all calls pick it up.
 # ---------------------------------------------------------------------------
+# Build subject areas text from actual courses in DB — stays correct when
+# the course set changes or the app is deployed for a different institution.
+def _build_active_subjects() -> str:
+    try:
+        ff   = sqlite3.connect(FUTUREFINDER_DB)
+        jobs = sqlite3.connect(JOBS_DB)
+        codes = [r[0] for r in ff.execute(
+            "SELECT DISTINCT ssa_code FROM courses WHERE is_active=1 AND ssa_code IS NOT NULL ORDER BY ssa_code"
+        ).fetchall()]
+        ff.close()
+        lines = []
+        for code in codes:
+            row = jobs.execute(
+                "SELECT label FROM ssa_categories WHERE ssa_code=?", (code,)
+            ).fetchone()
+            if row:
+                lines.append(f"- {row[0]}")
+        jobs.close()
+        return "\n".join(lines) if lines else "- Engineering, Digital, Construction, Health, Arts, Business"
+    except Exception:
+        return "- Engineering, Digital, Construction, Health, Arts, Business"
+
+_ACTIVE_SUBJECTS = _build_active_subjects()
+
+# ---------------------------------------------------------------------------
 _FF_BASE_SYSTEM = """\
 You are FutureFinder, an AI assistant helping prospective students explore
 courses and careers at the Greater Manchester Institute of Technology (GMIoT).
@@ -61,7 +86,14 @@ You are talking to someone who may be:
 
 GMIoT offers courses from Level 3 (T Level) through Level 7 (Master's), including
 apprenticeships at higher levels. There are no GCSEs or A Levels on offer.
-The courses are STEM-focused with some creative and health subjects.
+
+GMIoT's subject areas are:
+""" + _ACTIVE_SUBJECTS + """
+
+When exploring what a user wants, stay within these subject areas. If a user
+expresses an interest that GMIoT cannot serve (e.g. agriculture, land management,
+catering, sport), gently redirect them toward the closest subject area GMIoT does
+offer rather than pursuing the out-of-scope direction.
 
 Courses are retrieved from a database — do not invent course names or details
 from your own knowledge. Only work with courses the system provides to you.
