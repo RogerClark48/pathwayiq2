@@ -1,54 +1,58 @@
 """
-Pre-push script: reads active access codes from analytics.db and sets
-SEED_ACCESS_CODES on Railway so they survive redeployment.
+Pre-push script: fetches active access codes from the live Railway instance
+and sets SEED_ACCESS_CODES so they survive redeployment.
 
 Usage:
     python scripts/sync_access_codes.py [--dry-run]
 
-Requires Railway CLI to be installed and authenticated.
-Only exports codes that are not yet expired.
+Requires:
+  - Railway CLI installed and authenticated
+  - ADMIN_PASSWORD env var set (or enter it when prompted)
 """
 import json
-import sqlite3
+import os
 import subprocess
 import sys
-from datetime import datetime, timezone
-from pathlib import Path
+import urllib.request
+import urllib.error
+import base64
+import getpass
 
-ANALYTICS_DB = Path(__file__).parent.parent / "analytics.db"
+RAILWAY_URL = "https://pathwayiq2-production-5c07.up.railway.app"
 
 def main():
     dry_run = "--dry-run" in sys.argv
 
-    if not ANALYTICS_DB.exists():
-        print(f"analytics.db not found at {ANALYTICS_DB}")
+    password = os.environ.get("ADMIN_PASSWORD", "").strip()
+    if not password:
+        password = getpass.getpass("Admin password: ")
+
+    credentials = base64.b64encode(f"admin:{password}".encode()).decode()
+    req = urllib.request.Request(
+        f"{RAILWAY_URL}/admin/codes/export",
+        headers={"Authorization": f"Basic {credentials}"},
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            codes = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        print(f"Request failed: HTTP {e.code} — wrong password?")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Request failed: {e}")
         sys.exit(1)
 
-    conn = sqlite3.connect(ANALYTICS_DB)
-    conn.row_factory = sqlite3.Row
-    now = datetime.now(timezone.utc).isoformat()
-
-    rows = conn.execute(
-        "SELECT code, label, expires_at FROM access_codes "
-        "WHERE expires_at IS NULL OR expires_at > ?",
-        (now,)
-    ).fetchall()
-    conn.close()
-
-    if not rows:
-        print("No active access codes found in analytics.db.")
+    if not codes:
+        print("No active access codes found on Railway instance.")
         sys.exit(0)
-
-    codes = [
-        {"code": r["code"], "label": r["label"], "expires_at": r["expires_at"]}
-        for r in rows
-    ]
-    value = json.dumps(codes)
 
     print(f"Found {len(codes)} active code(s):")
     for c in codes:
         expiry = c["expires_at"] or "no expiry"
         print(f"  {c['code']}  ({c['label']})  expires: {expiry}")
+
+    value = json.dumps(codes)
 
     if dry_run:
         print("\n[dry-run] Would set SEED_ACCESS_CODES to:")

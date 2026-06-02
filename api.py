@@ -1486,6 +1486,25 @@ def admin_codes():
     return make_response(html)
 
 
+@app.get("/admin/codes/export")
+def admin_codes_export():
+    """Return active (non-expired) access codes as JSON for SEED_ACCESS_CODES env var."""
+    if not _check_admin_auth():
+        resp = make_response("Unauthorised", 401)
+        resp.headers["WWW-Authenticate"] = 'Basic realm="FutureFinder Admin"'
+        return resp
+    now = datetime.utcnow().isoformat()
+    conn = sqlite3.connect(ANALYTICS_DB)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT code, label, expires_at FROM access_codes "
+        "WHERE expires_at IS NULL OR expires_at > ?", (now,)
+    ).fetchall()
+    conn.close()
+    codes = [{"code": r["code"], "label": r["label"], "expires_at": r["expires_at"]} for r in rows]
+    return jsonify(codes)
+
+
 @app.get("/admin/analytics")
 def admin_analytics():
     if not _check_admin_auth():
