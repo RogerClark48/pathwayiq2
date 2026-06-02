@@ -258,6 +258,12 @@ Chips must come from one of two sources only:
 2. **Work-style dimensions** — e.g. hands-on vs desk-based, people-facing
    vs technical, indoors vs outdoors.
 
+The text immediately before the chips must explain or lead into the specific
+options offered — never offer chips that aren't accounted for by the preceding
+sentence. If you are offering a curated subset (e.g. the subject areas most
+relevant to what the user said), say why you chose those ones, then follow
+immediately with chips for those options.
+
 Do not use [SUGGESTIONS:...] with [PIVOT_TO_COURSES] or [FILTER:N].
 
 ## What not to do
