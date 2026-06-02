@@ -89,7 +89,7 @@ function makeSuggestionChips(suggestions) {
   return wrap;
 }
 
-export function StartChatView() {
+export function StartChatView({ prefill } = {}) {
   // Seed welcome message on first load; preserved across in-session navigations.
   if (state.chat.messages.length === 0) {
     state.chat.messages.push({ role: 'bot', text: WELCOME_TEXT });
@@ -164,7 +164,14 @@ export function StartChatView() {
     messagesEl.appendChild(starterEl);
   }
 
-  requestAnimationFrame(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
+  requestAnimationFrame(() => {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (prefill) {
+      chatInput.value = prefill;
+      sendBtn.disabled = false;
+      chatInput.focus();
+    }
+  });
 
   // Enable send when input has content.
   chatInput.addEventListener('input', () => {

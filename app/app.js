@@ -17,7 +17,7 @@ import { PathwayMapView }  from './views/pathway-map.js';
 register('welcome',       () => WelcomeView());
 register('edit',          () => EditView());
 register('start',         () => StartView());
-register('chat-first',    () => StartChatView());
+register('chat-first',    (slices) => StartChatView(slices));
 register('course-list',   (slices) => CourseListView(slices));
 register('course-detail', (slices) => CourseDetailView(slices));
 register('job-detail',    (slices) => JobDetailView(slices));
@@ -33,7 +33,11 @@ document.addEventListener('DOMContentLoaded', () => {
   loadWelcomeData(); // kick fetch immediately — welcome view reuses the same promise
   updateBadge();
   logEvent('session_start');
-  go('chat-first');
+
+  // Pre-fill from ?q= parameter (set by the GMIoT embed stub doorway).
+  const qParam = new URLSearchParams(window.location.search).get('q') || '';
+  const prefill = qParam.slice(0, 300).trim();
+  go('chat-first', prefill ? { prefill } : {});
 
   document.getElementById('btn-home').addEventListener('click', () => go('chat-first'));
   document.getElementById('btn-saved').addEventListener('click', () => go('saved-list'));

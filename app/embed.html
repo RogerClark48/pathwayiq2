@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<!--
+  FutureFinder embed stub — standalone fragment for the GMIoT website.
+
+  Drop this file (or copy the .ff-stub block + style + script) into any GMIoT page.
+  When the user types a question and submits, a new tab opens the FutureFinder app
+  with their text pre-filled in the chat input (not auto-submitted).
+
+  No external dependencies. No app logic duplicated here.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FutureFinder — embed preview</title>
+  <style>
+    /* Page wrapper — for standalone preview only; not needed when embedded */
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #e8e8e8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 16px;
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+
+<!--
+  ═══════════════════════════════════════════════════════
+  EMBED BLOCK — copy everything from here to END EMBED
+  ═══════════════════════════════════════════════════════
+-->
+<div class="ff-stub">
+  <div class="ff-stub__header">
+    <div class="ff-stub__logo">
+      <img src="https://pathwayiq2-production-5c07.up.railway.app/3a.png" alt="" class="ff-stub__logo-img" loading="lazy">
+      <span class="ff-stub__logo-text">FutureFinder</span>
+    </div>
+    <img src="https://pathwayiq2-production-5c07.up.railway.app/gmiot.png" alt="Greater Manchester Institute of Technology"
+         class="ff-stub__gmiot-img" loading="lazy">
+  </div>
+
+  <div class="ff-stub__body">
+    <p class="ff-stub__tagline">Find your course and where it could lead</p>
+    <div class="ff-stub__input-row">
+      <input type="text" class="ff-stub__input" id="ff-stub-input"
+             placeholder="Ask about courses or careers…"
+             autocomplete="off" autocorrect="off" spellcheck="false"
+             maxlength="300">
+      <button class="ff-stub__send" id="ff-stub-send" aria-label="Open FutureFinder">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+</div><!-- .ff-stub -->
+
+<style>
+/* ── FutureFinder stub — scoped to .ff-stub ─────────────────────────── */
+.ff-stub *,
+.ff-stub *::before,
+.ff-stub *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+.ff-stub {
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #FFFBC0;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.15);
+  max-width: 400px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Header — white bar matching app header */
+.ff-stub__header {
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  height: 56px;
+  position: relative;
+}
+
+.ff-stub__logo {
+  position: absolute;
+  left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ff-stub__logo-img {
+  height: 32px;
+  width: auto;
+  display: block;
+}
+
+.ff-stub__logo-text {
+  font-family: "Arial Black", Arial, sans-serif;
+  font-weight: 900;
+  font-size: 13px;
+  color: #1A237E;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+
+.ff-stub__gmiot-img {
+  height: 45px;
+  width: 134px;
+  flex-shrink: 0;
+  display: block;
+}
+
+/* Body */
+.ff-stub__body {
+  padding: 28px 20px 24px;
+}
+
+.ff-stub__tagline {
+  color: #1A237E;
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+.ff-stub__input-row {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 2px solid #1A237E;
+  border-radius: 24px;
+  padding: 6px 6px 6px 16px;
+  gap: 8px;
+}
+
+.ff-stub__input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: none;
+  color: #1A1A1A;
+  font-size: 1rem;
+  font-family: inherit;
+  min-width: 0;
+}
+
+.ff-stub__input::placeholder { color: #9e9e9e; }
+
+.ff-stub__send {
+  flex-shrink: 0;
+  background: #1A237E;
+  color: #ffffff;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+  font: inherit;
+}
+
+.ff-stub__send:hover { background: #283593; }
+.ff-stub__send:active { background: #0d1b6e; }
+
+/* Mobile — full width, no frame */
+@media (max-width: 600px) {
+  .ff-stub {
+    max-width: 100%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+</style>
+
+<script>
+(function () {
+  var APP_URL = 'https://pathwayiq2-production-5c07.up.railway.app/';
+  var input   = document.getElementById('ff-stub-input');
+  var btn     = document.getElementById('ff-stub-send');
+
+  function launch() {
+    var text = input.value.trim().slice(0, 300);
+    if (!text) { input.focus(); return; }
+    window.open(APP_URL + '?q=' + encodeURIComponent(text), '_blank', 'noopener,noreferrer');
+  }
+
+  btn.addEventListener('click', launch);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); launch(); }
+  });
+})();
+</script>
+<!--
+  ═══════════════════════════════════════════
+  END EMBED
+  ═══════════════════════════════════════════
+-->
+
+</body>
+</html>
