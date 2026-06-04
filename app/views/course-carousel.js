@@ -194,7 +194,8 @@ export function CourseCarouselView(slices = {}) {
           backRoute:   'course-list',
         });
       } else {
-        card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        const targetX = card.offsetLeft + card.offsetWidth / 2 - track.clientWidth / 2;
+        track.scrollTo({ left: Math.max(0, targetX), behavior: 'smooth' });
       }
     });
 
@@ -281,7 +282,17 @@ export function CourseCarouselView(slices = {}) {
     if (_dragStart === null) return;
     _dragStart = null;
     track.style.cursor = '';
-    // scroll-snap takes over — no manual snap needed
+
+    // Smooth-snap to nearest card (scroll-snap alone doesn't animate on mouse release)
+    const cx = track.scrollLeft + track.clientWidth / 2;
+    let nearest = 0, minDist = Infinity;
+    cardEls.forEach((c, i) => {
+      const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - cx);
+      if (d < minDist) { minDist = d; nearest = i; }
+    });
+    const target = cardEls[nearest];
+    const targetX = target.offsetLeft + target.offsetWidth / 2 - track.clientWidth / 2;
+    track.scrollTo({ left: Math.max(0, targetX), behavior: 'smooth' });
   }
 
   track.addEventListener('pointerup',     endDrag);
