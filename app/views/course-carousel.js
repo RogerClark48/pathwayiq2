@@ -184,6 +184,8 @@ export function CourseCarouselView(slices = {}) {
     logEvent('course_impression', 'course', course.course_id, course.course_title);
 
     card.addEventListener('click', () => {
+      // Suppress navigation if the pointer just finished a drag
+      if (_dragDelta > 6) { _dragDelta = 0; return; }
       if (card.classList.contains('is-active')) {
         logEvent('course_tap', 'course', course.course_id, course.course_title);
         go('course-detail', {
@@ -210,10 +212,24 @@ export function CourseCarouselView(slices = {}) {
   let   currentIdx = 0;
   let   currentPin = null;
 
-  function updateActive(idx) {
-    if (idx === currentIdx) return;
-    currentIdx = idx;
+  function setActivePin(course) {
+    if (!_activeMap || course.lat == null || course.lng == null) return;
+    setTimeout(() => {
+      if (currentPin) currentPin.remove();
+      currentPin = L.marker([course.lat, course.lng], {
+        icon: makePin(subjectColour(course.ssa_code)),
+      }).addTo(_activeMap);
+      _activeMap.panTo([course.lat, course.lng], {
+        animate:       true,
+        duration:      0.65,
+        easeLinearity: 0.5,
+      });
+    }, 90);
+  }
 
+  function updateActive(idx, force = false) {
+    if (idx === currentIdx && !force) return;
+    currentIdx = idx;
     cardEls.forEach((c, i) => {
       const active = i === idx;
       c.classList.toggle('is-active', active);
@@ -221,37 +237,55 @@ export function CourseCarouselView(slices = {}) {
       c.tabIndex = active ? 0 : -1;
     });
     dotEls.forEach((d, i) => d.classList.toggle('is-active', i === idx));
-
-    // Map glide — slight delay so card snap leads the map
-    const course = courses[idx];
-    if (_activeMap && course.lat != null && course.lng != null) {
-      setTimeout(() => {
-        if (currentPin) currentPin.remove();
-        currentPin = L.marker([course.lat, course.lng], {
-          icon: makePin(subjectColour(course.ssa_code)),
-        }).addTo(_activeMap);
-        _activeMap.panTo([course.lat, course.lng], {
-          animate:      true,
-          duration:     0.65,
-          easeLinearity: 0.5,
-        });
-      }, 90);
-    }
+    setActivePin(courses[idx]);
   }
 
+  // ── Scroll listener — updates active card after native or JS-driven scroll ─
   let scrollRaf = null;
   track.addEventListener('scroll', () => {
     if (scrollRaf) cancelAnimationFrame(scrollRaf);
     scrollRaf = requestAnimationFrame(() => {
       const cx = track.scrollLeft + track.clientWidth / 2;
       let nearest = 0, minDist = Infinity;
-      cardEls.forEach((card, i) => {
-        const d = Math.abs(card.offsetLeft + card.offsetWidth / 2 - cx);
+      cardEls.forEach((c, i) => {
+        const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - cx);
         if (d < minDist) { minDist = d; nearest = i; }
       });
-      if (nearest !== currentIdx) updateActive(nearest);
+      updateActive(nearest);
     });
   }, { passive: true });
+
+  // ── Mouse drag — lets desktop users drag the carousel ─────────────────────
+  // (Touch uses native CSS scroll-snap; this only activates for mouse pointers.)
+  let _dragStart  = null;
+  let _dragLeft   = 0;
+  let _dragDelta  = 0;
+
+  track.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'mouse') return;
+    _dragStart = e.clientX;
+    _dragLeft  = track.scrollLeft;
+    _dragDelta = 0;
+    track.setPointerCapture(e.pointerId);
+    track.style.cursor = 'grabbing';
+  });
+
+  track.addEventListener('pointermove', e => {
+    if (_dragStart === null || e.pointerType !== 'mouse') return;
+    const dx = _dragStart - e.clientX;
+    _dragDelta = Math.abs(dx);
+    track.scrollLeft = _dragLeft + dx;
+  });
+
+  function endDrag() {
+    if (_dragStart === null) return;
+    _dragStart = null;
+    track.style.cursor = '';
+    // scroll-snap takes over — no manual snap needed
+  }
+
+  track.addEventListener('pointerup',     endDrag);
+  track.addEventListener('pointercancel', endDrag);
 
   // ── Leaflet map initialisation ─────────────────────────────────────────────
   requestAnimationFrame(() => {
