@@ -61,9 +61,9 @@ function linkify(text) {
   );
 }
 
-function makeBubble(role, text) {
+function makeBubble(role, text, animate = false) {
   const wrap  = document.createElement('div');
-  wrap.className = `chat-bubble chat-bubble--${role}`;
+  wrap.className = `chat-bubble chat-bubble--${role}${animate ? ' chat-bubble--animate' : ''}`;
   const inner = document.createElement('div');
   inner.className = 'bubble-text';
   if (role === 'bot') {
@@ -212,7 +212,7 @@ export function StartChatView({ prefill } = {}) {
 
   function makeThinkingBubble() {
     const wrap  = document.createElement('div');
-    wrap.className = 'chat-bubble chat-bubble--bot chat-bubble--thinking';
+    wrap.className = 'chat-bubble chat-bubble--bot chat-bubble--thinking chat-bubble--animate';
     const inner = document.createElement('div');
     inner.className = 'bubble-text bubble-text--thinking';
     inner.textContent = '···';
@@ -238,7 +238,7 @@ export function StartChatView({ prefill } = {}) {
 
     logEvent('chat_submit', null, null, null, { query: text });
     submitMessage(text);
-    messagesEl.appendChild(makeBubble('user', text));
+    messagesEl.appendChild(makeBubble('user', text, true));
     chatInput.value = '';
     sendBtn.disabled = true;
     scrollBottom();
@@ -255,7 +255,7 @@ export function StartChatView({ prefill } = {}) {
       thinkingEl.remove();
       const reply = data.bot_response;
       state.chat.messages.push({ role: 'bot', text: reply });
-      messagesEl.appendChild(makeBubble('bot', reply));
+      messagesEl.appendChild(makeBubble('bot', reply, true));
 
       if (data.suggestions?.length && !data.pivot_to_courses) {
         suggestionEl = makeSuggestionChips(data.suggestions);
@@ -277,7 +277,7 @@ export function StartChatView({ prefill } = {}) {
       thinkingEl.remove();
       const reply = 'Something went wrong — please try again.';
       state.chat.messages.push({ role: 'bot', text: reply });
-      messagesEl.appendChild(makeBubble('bot', reply));
+      messagesEl.appendChild(makeBubble('bot', reply, true));
     } finally {
       setWaiting(false);
       chatInput.disabled = false;

@@ -1596,6 +1596,30 @@ body {
   color: #5D4037;
 }
 
+/* ── Chat bubble entrance animation ──────────────────────────────────────── */
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+
+/* Only animate when the OS hasn't asked for reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  .chat-bubble--animate {
+    animation: bubble-in 180ms ease-out both;
+  }
+
+  /* Grow from the tail corner — bot from bottom-left, user from bottom-right */
+  .chat-bubble--bot.chat-bubble--animate,
+  .chat-bubble--thinking.chat-bubble--animate {
+    transform-origin: bottom left;
+  }
+
+  .chat-bubble--user.chat-bubble--animate {
+    transform-origin: bottom right;
+  }
+}
+
 /* ── Course carousel (visual-redesign branch) ────────────────────────────── */
 
 .view-course-carousel {
