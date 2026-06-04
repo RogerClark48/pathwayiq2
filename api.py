@@ -2854,28 +2854,95 @@ def saved_campuses():
     return jsonify(list(campus_map.values()))
 
 
+def _load_campus_enrichment(conn, provider_ids: list) -> tuple[dict, dict]:
+    """Return (providers_map, campuses_by_provider_id) for the given provider IDs."""
+    if not provider_ids:
+        return {}, {}
+    ph = ",".join("?" * len(provider_ids))
+    providers = {
+        r["provider_id"]: r["provider_name"]
+        for r in conn.execute(
+            f"SELECT provider_id, provider_name FROM providers WHERE provider_id IN ({ph})",
+            provider_ids,
+        )
+    }
+    campuses_by_provider: dict[int, list] = {}
+    for r in conn.execute(
+        f"SELECT provider_id, campus_name, lat, lng FROM campuses WHERE provider_id IN ({ph})",
+        provider_ids,
+    ):
+        campuses_by_provider.setdefault(r["provider_id"], []).append(r)
+    return providers, campuses_by_provider
+
+
+def _resolve_campus(campus_text: str | None, provider_id: int, campuses_by_provider: dict) -> tuple:
+    """Return (lat, lng, resolved_campus_name) using substring matching then fallback."""
+    candidates = campuses_by_provider.get(provider_id, [])
+    if not candidates:
+        return None, None, campus_text or ""
+    best = None
+    if campus_text:
+        cc = campus_text.lower()
+        for cam in candidates:
+            cn = cam["campus_name"].lower()
+            if cn in cc or cc in cn:
+                best = cam
+                break
+    if not best:
+        for cam in candidates:
+            if cam["campus_name"].lower() == "main campus":
+                best = cam
+                break
+    if not best:
+        best = candidates[0]
+    return best["lat"], best["lng"], best["campus_name"]
+
+
+def _build_card_row(r, providers: dict, campuses_by_provider: dict) -> dict:
+    """Build a rich course card dict from a DB row + pre-loaded enrichment maps."""
+    lat, lng, campus_name = _resolve_campus(r["campus"], r["provider_id"], campuses_by_provider)
+    return {
+        "course_id":     r["course_id"],
+        "course_title":  r["course_title"],
+        "preview_text":  (r["preview"] or "")[:200].rstrip(),
+        "ssa_code":      r["ssa_code"],
+        "level":         r["level"],
+        "qual_type":     r["qual_type"],
+        "mode":          r["mode"],
+        "duration":      r["duration"],
+        "provider_name": providers.get(r["provider_id"], ""),
+        "campus_name":   campus_name,
+        "lat":           lat,
+        "lng":           lng,
+    }
+
+
+_COURSE_CARD_FIELDS = (
+    "course_id, course_title, preview, ssa_code, level, qual_type, mode, duration, campus, provider_id"
+)
+
+
 def get_sample_courses() -> dict:
     """One random active course per SSA code — used for the 'Show me some ideas' sampler."""
     try:
         conn = sqlite3.connect(FUTUREFINDER_DB)
         conn.row_factory = sqlite3.Row
         codes = [r[0] for r in conn.execute(
-            'SELECT DISTINCT ssa_code FROM courses WHERE ssa_code IS NOT NULL AND is_active=1 ORDER BY ssa_code'
+            "SELECT DISTINCT ssa_code FROM courses WHERE ssa_code IS NOT NULL AND is_active=1 ORDER BY ssa_code"
         ).fetchall()]
-        courses = []
+        rows = []
         for code in codes:
             row = conn.execute(
-                'SELECT course_id, course_title, preview FROM courses '
-                'WHERE ssa_code=? AND is_active=1 ORDER BY RANDOM() LIMIT 1',
+                f"SELECT {_COURSE_CARD_FIELDS} FROM courses "
+                "WHERE ssa_code=? AND is_active=1 ORDER BY RANDOM() LIMIT 1",
                 (code,)
             ).fetchone()
             if row:
-                courses.append({
-                    "course_id":    row["course_id"],
-                    "course_title": row["course_title"],
-                    "preview_text": (row["preview"] or "")[:200].rstrip(),
-                })
+                rows.append(row)
+        provider_ids = list({r["provider_id"] for r in rows})
+        providers, campuses_by_provider = _load_campus_enrichment(conn, provider_ids)
         conn.close()
+        courses = [_build_card_row(r, providers, campuses_by_provider) for r in rows]
     except Exception as e:
         print(f"[sample_courses] error: {e}", flush=True)
         return {"intro_text": "Here are some courses from across our subject areas.", "courses": []}
@@ -2891,19 +2958,14 @@ def get_filtered_courses(ssa_code: int) -> dict:
         conn = sqlite3.connect(FUTUREFINDER_DB)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            'SELECT course_id, course_title, preview FROM courses '
-            'WHERE ssa_code=? AND is_active=1 ORDER BY course_title',
+            f"SELECT {_COURSE_CARD_FIELDS} FROM courses "
+            "WHERE ssa_code=? AND is_active=1 ORDER BY course_title",
             (ssa_code,)
         ).fetchall()
+        provider_ids = list({r["provider_id"] for r in rows})
+        providers, campuses_by_provider = _load_campus_enrichment(conn, provider_ids)
         conn.close()
-        courses = [
-            {
-                "course_id":    r["course_id"],
-                "course_title": r["course_title"],
-                "preview_text": (r["preview"] or "")[:200].rstrip(),
-            }
-            for r in rows
-        ]
+        courses = [_build_card_row(r, providers, campuses_by_provider) for r in rows]
     except Exception as e:
         print(f"[filtered_courses] ssa_code={ssa_code} error: {e}", flush=True)
         return {"intro_text": "Here are the courses in that area.", "courses": []}
@@ -3043,21 +3105,24 @@ read it from the beginning, not just the most recent messages.
         selected_ids = [str(c["course_id"]) for c in candidates[:5]]
         intro_text   = "Here are some courses that might interest you."
 
-    # Batch-fetch overview from SQLite for final display text
+    # Batch-fetch full card data from SQLite for final display
     id_to_cand = {str(c["course_id"]): c for c in candidates}
     int_ids    = [int(i) for i in selected_ids if i in id_to_cand]
 
-    db_map = {}
+    db_map: dict[str, any] = {}
+    providers: dict        = {}
+    campuses_by_provider: dict = {}
     if int_ids:
         placeholders = ",".join("?" * len(int_ids))
         try:
             conn = sqlite3.connect(FUTUREFINDER_DB)
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                f"SELECT course_id, course_title, preview FROM courses "
-                f"WHERE course_id IN ({placeholders})",
+                f"SELECT {_COURSE_CARD_FIELDS} FROM courses WHERE course_id IN ({placeholders})",
                 int_ids,
             ).fetchall()
+            provider_ids = list({r["provider_id"] for r in rows})
+            providers, campuses_by_provider = _load_campus_enrichment(conn, provider_ids)
             conn.close()
             db_map = {str(r["course_id"]): r for r in rows}
         except Exception as e:
@@ -3067,15 +3132,26 @@ read it from the beginning, not just the most recent messages.
     for cid in selected_ids:
         if cid not in id_to_cand:
             continue
-        cand    = id_to_cand[cid]
-        db_row  = db_map.get(cid)
-        title   = db_row["course_title"] if db_row else cand["title"]
-        preview = ((db_row["preview"] or "") if db_row else cand["preview"])[:200].rstrip()
-        courses_out.append({
-            "course_id":    int(cid),
-            "course_title": title,
-            "preview_text": preview,
-        })
+        cand   = id_to_cand[cid]
+        db_row = db_map.get(cid)
+        if db_row:
+            courses_out.append(_build_card_row(db_row, providers, campuses_by_provider))
+        else:
+            # Fallback from Chroma candidate (no campus data available)
+            courses_out.append({
+                "course_id":    int(cid),
+                "course_title": cand["title"],
+                "preview_text": (cand["preview"] or "")[:200].rstrip(),
+                "ssa_code":     None,
+                "level":        cand.get("level"),
+                "qual_type":    cand.get("qual_type"),
+                "mode":         None,
+                "duration":     None,
+                "provider_name": "",
+                "campus_name":  "",
+                "lat":          None,
+                "lng":          None,
+            })
 
     return {"intro_text": intro_text, "courses": courses_out}
 

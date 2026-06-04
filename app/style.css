@@ -1594,3 +1594,313 @@ body {
   border-left: 3px solid var(--c-amber);
   color: #5D4037;
 }
+
+/* ── Course carousel (visual-redesign branch) ────────────────────────────── */
+
+.view-course-carousel {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  min-height: unset; /* override .view min-height */
+}
+
+/* ── Stage: map fills entire background ──────────────────────────────────── */
+.carousel-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.carousel-map-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #d4dce4; /* fallback while tiles load */
+}
+
+/* Quiet Leaflet attribution badge */
+.carousel-map-bg .leaflet-control-attribution {
+  font-size: 8px;
+  background: rgba(255,255,255,0.55);
+  padding: 1px 4px;
+  backdrop-filter: blur(4px);
+}
+
+/* ── Overlay: header + cards float above the map ─────────────────────────── */
+.carousel-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  /* pointer-events: none on the overlay so tap-on-map area is non-interactive */
+  pointer-events: none;
+}
+
+.carousel-header-bar {
+  padding: 12px 16px 0;
+  pointer-events: all;
+}
+
+.carousel-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.9);
+  border: none;
+  border-radius: 22px;
+  padding: 7px 14px 7px 10px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--c-brand);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.carousel-back-btn:active {
+  opacity: 0.8;
+}
+
+/* ── Cards zone: sticks to the bottom of the overlay ─────────────────────── */
+.carousel-cards-zone {
+  margin-top: auto;
+  padding-bottom: max(20px, env(safe-area-inset-bottom, 12px));
+  pointer-events: all;
+}
+
+/* ── Horizontal scroll track ─────────────────────────────────────────────── */
+.carousel-track {
+  display: flex;
+  overflow-x: scroll;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  gap: 12px;
+  align-items: flex-end;
+  padding-top: 12px;
+}
+
+.carousel-track::-webkit-scrollbar { display: none; }
+
+/*
+ * Spacer pseudo-elements centre the first and last cards.
+ * Width = (50% of container) − (half card width).
+ * Card width = min(300px, 78vw); half = min(150px, 39vw).
+ */
+.carousel-track::before,
+.carousel-track::after {
+  content: '';
+  flex-shrink: 0;
+  width: calc(50% - min(150px, 39vw));
+  /* min-width so narrow spacers don't cause misalignment */
+  min-width: 12px;
+}
+
+/* ── Individual card ─────────────────────────────────────────────────────── */
+.carousel-card {
+  flex-shrink: 0;
+  width: min(300px, 78vw);
+  scroll-snap-align: center;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.28);
+  cursor: pointer;
+  /* Inactive: slightly smaller and dimmed */
+  opacity: 0.55;
+  transform: scale(0.93) translateY(10px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  /* Prevent card scroll from interfering with page layout */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.carousel-card.is-active {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+/* ── Card header (coloured strip) ────────────────────────────────────────── */
+.cc-header {
+  position: relative;
+  padding: 14px 14px 16px;
+  min-height: 148px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+/* Placeholder watermark — 7% opacity layer, drop real SVG here later */
+.cc-watermark {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  width: 108px;
+  height: 108px;
+  color: white;
+  opacity: 0.07;
+  pointer-events: none;
+}
+
+.cc-wm-icon {
+  width: 100%;
+  height: 100%;
+}
+
+/* Level badge — fixed top-right; absent for short courses (null level) */
+.cc-level-badge {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  background: rgba(255,255,255,0.22);
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 8px;
+  letter-spacing: 0.04em;
+}
+
+.cc-level-badge--empty {
+  display: none;
+}
+
+/* Title block — sits above body */
+.cc-title-block {
+  position: relative;
+  z-index: 1;
+  padding-right: 44px; /* clear the level badge */
+}
+
+.cc-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.25;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.cc-specialism {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.78);
+  margin: 4px 0 0;
+  line-height: 1.35;
+}
+
+/* ── Card body (white) ───────────────────────────────────────────────────── */
+.cc-body {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Qualification and mode chips */
+.cc-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #F0F0F0;
+  color: #3A3A3A;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+/* Two-line hook — clamped, never scrolls (scroll would conflict with carousel swipe) */
+.cc-hook {
+  font-size: 13px;
+  color: #4A4A4A;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+}
+
+/* Footer: provider pin + duration */
+.cc-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.cc-provider {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #5A5A5A;
+  font-weight: 500;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-provider svg { flex-shrink: 0; }
+
+.cc-duration {
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Dot indicator ───────────────────────────────────────────────────────── */
+.carousel-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0 0;
+}
+
+.carousel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.22);
+  transition: width 0.2s ease, background 0.2s ease, border-radius 0.2s ease;
+}
+
+.carousel-dot.is-active {
+  background: var(--c-brand);
+  width: 18px;
+  border-radius: 3px;
+}
+
+/* ── Empty / error state ─────────────────────────────────────────────────── */
+.carousel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 20px;
+  padding: 32px;
+  background: var(--c-yellow);
+}
+
+.carousel-empty-text {
+  font-size: 15px;
+  color: var(--c-muted);
+  text-align: center;
+}
