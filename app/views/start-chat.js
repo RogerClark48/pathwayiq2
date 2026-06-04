@@ -11,14 +11,42 @@ const WELCOME_TEXT =
   "Tell me what you're interested in, or what kind of work appeals to you, " +
   "and we'll go from there.";
 
-const STARTER_CHIPS = [
+const STARTER_CHIP_POOL = [
   "I like working with my hands",
   "I want a job outdoors",
   "Something with computers",
   "I want to work in the creative industries",
   "I want to change career",
-  "Show me some ideas",
+  "I'm good at problem-solving",
+  "I want to work in healthcare",
+  "I like building and making things",
+  "Something to do with engineering",
+  "I want a career that pays well",
+  "I'm not sure what I want yet",
+  "I like helping people",
+  "I want to work with technology",
+  "Something hands-on, not a desk job",
+  "I'm interested in construction",
+  "I want to work in TV or media",
+  "What can I do after my GCSEs?",
+  "I like science and how things work",
+  "Something creative with design",
+  "I want a practical, skilled trade",
+  "Where could an apprenticeship take me?",
+  "I want to work with my local community",
+  "I'm into gaming and software",
+  "What jobs are growing around here?",
 ];
+
+function pickStarterChips() {
+  const fixed = "Show me some ideas";
+  const pool  = STARTER_CHIP_POOL.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return [...pool.slice(0, 4), fixed];
+}
 
 function linkify(text) {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -66,7 +94,7 @@ function makeQualMapButton() {
 function makeStarterChips() {
   const wrap = document.createElement('div');
   wrap.className = 'starter-chips';
-  STARTER_CHIPS.forEach(text => {
+  pickStarterChips().forEach(text => {
     const btn = document.createElement('button');
     btn.className = 'starter-chip';
     btn.dataset.text = text;
