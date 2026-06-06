@@ -194,8 +194,7 @@ export function CourseCarouselView(slices = {}) {
           backRoute:   'course-list',
         });
       } else {
-        const targetX = card.offsetLeft + card.offsetWidth / 2 - track.clientWidth / 2;
-        track.scrollTo({ left: Math.max(0, targetX), behavior: 'smooth' });
+        smoothScrollTo(card.offsetLeft + card.offsetWidth / 2 - track.clientWidth / 2);
       }
     });
 
@@ -206,6 +205,24 @@ export function CourseCarouselView(slices = {}) {
     dot.className = `carousel-dot${idx === 0 ? ' is-active' : ''}`;
     dotsEl.appendChild(dot);
   });
+
+  // ── Programmatic smooth scroll (rAF, works cross-browser on horizontal axis) ─
+  let _scrollAnimId = null;
+
+  function smoothScrollTo(targetX, duration = 300) {
+    if (_scrollAnimId) { cancelAnimationFrame(_scrollAnimId); _scrollAnimId = null; }
+    const startX = track.scrollLeft;
+    const delta  = Math.max(0, targetX) - startX;
+    if (Math.abs(delta) < 1) return;
+    const t0 = performance.now();
+    function step(t) {
+      const p = Math.min((t - t0) / duration, 1);
+      const e = 1 - (1 - p) ** 3; // cubic ease-out
+      track.scrollLeft = startX + delta * e;
+      _scrollAnimId = p < 1 ? requestAnimationFrame(step) : null;
+    }
+    _scrollAnimId = requestAnimationFrame(step);
+  }
 
   // ── Active-card tracking ───────────────────────────────────────────────────
   const cardEls = Array.from(track.querySelectorAll('.carousel-card'));
@@ -264,10 +281,11 @@ export function CourseCarouselView(slices = {}) {
 
   track.addEventListener('pointerdown', e => {
     if (e.pointerType !== 'mouse') return;
+    // Cancel any in-flight animation so drag takes over immediately
+    if (_scrollAnimId) { cancelAnimationFrame(_scrollAnimId); _scrollAnimId = null; }
     _dragStart = e.clientX;
     _dragLeft  = track.scrollLeft;
     _dragDelta = 0;
-    track.setPointerCapture(e.pointerId);
     track.style.cursor = 'grabbing';
   });
 
@@ -291,12 +309,14 @@ export function CourseCarouselView(slices = {}) {
       if (d < minDist) { minDist = d; nearest = i; }
     });
     const target = cardEls[nearest];
-    const targetX = target.offsetLeft + target.offsetWidth / 2 - track.clientWidth / 2;
-    track.scrollTo({ left: Math.max(0, targetX), behavior: 'smooth' });
+    smoothScrollTo(target.offsetLeft + target.offsetWidth / 2 - track.clientWidth / 2);
   }
 
   track.addEventListener('pointerup',     endDrag);
   track.addEventListener('pointercancel', endDrag);
+  // Catch releases outside the track so _dragStart is always cleared
+  window.addEventListener('pointerup',     endDrag);
+  window.addEventListener('pointercancel', endDrag);
 
   // ── Leaflet map initialisation ─────────────────────────────────────────────
   requestAnimationFrame(() => {
