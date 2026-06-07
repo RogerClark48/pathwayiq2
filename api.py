@@ -358,7 +358,7 @@ _jpc_conn.execute("""
         explain_text   TEXT
     )
 """)
-for _col in ("courses_json TEXT", "explain_cache_version INTEGER", "courses_cache_version INTEGER"):
+for _col in ("courses_json TEXT", "explain_cache_version INTEGER", "courses_cache_version INTEGER", "ladder_json TEXT", "ladder_cache_version INTEGER"):
     try:
         _jpc_conn.execute(f"ALTER TABLE job_progression_cache ADD COLUMN {_col}")
     except Exception:
@@ -368,6 +368,7 @@ _jpc_conn.close()
 
 EXPLAIN_CACHE_VERSION  = 1  # bump when the explain prompt changes to force regeneration
 COURSES_CACHE_VERSION  = 2  # bump when the job_courses Haiku prompt changes
+LADDER_CACHE_VERSION   = 1  # bump when the climb prompt changes to force regeneration
 
 CAUTION_DIVERGENCE_THRESHOLD  = 15  # domain% - skills% > this → caution flag
 CROSS_COLLECTION_MIN_SKILLS   = 72  # hard floor — connections below this are excluded
@@ -2771,6 +2772,184 @@ def job_explain(job_id):
 
     jobs_conn.close()
     return jsonify({"text": text})
+
+
+# ---------------------------------------------------------------------------
+# Climb ladder — structured career progression (Sonnet, tool-forced)
+# ---------------------------------------------------------------------------
+
+_CLIMB_SYSTEM_PROMPT = """\
+You are a career guidance advisor helping college students see where a job role
+can lead. You map an honest, plain-English career ladder grounded in how careers
+actually develop.
+Each job profile you receive includes two authoritative fields written by career
+experts at the National Careers Service and Prospects: 'Entry routes' describes
+how people actually get INTO this role, and 'Career progression' describes where
+this role LEADS. These are your primary source — use 'Entry routes' to shape the
+rung(s) below the role, and 'Career progression' to shape the rung(s) above it.
+Where your own knowledge adds current, accurate detail you may supplement them,
+but never contradict them.
+Build a single vertical ladder of 3–5 rungs, ordered from lower to higher
+seniority, with the viewed role sitting in its true position on that ladder.
+RULES
+- Include the viewed role exactly once, with marker "current" and the stage text
+  "You are here". Never relabel or move it.
+- Use real, recognisable UK job titles. Do not invent roles or stack near-duplicate
+  titles to pad the ladder.
+- Order strictly by seniority, lowest first. The single most senior destination
+  takes marker "goal".
+- "stage" is a short caption (≤18 characters): a rough time-to-reach ("3–5 yrs")
+  or a plain descriptor ("Entry", "Lead the work", "With a degree"). Keep it honest
+  — do not imply a fast or guaranteed climb.
+- If the role is entry-level with no natural feeder role, omit "from" rungs and let
+  "current" be the first rung. If the role is already senior or specialist near the
+  top of its field, it may itself be the "goal" — do not invent higher rungs.
+- "commentary" is 2–3 SHORT paragraphs expanding on the ladder in plain English —
+  what the climb really looks like, genuine lateral moves, specialisms, freelance
+  routes, and honesty about competitive or non-linear fields. Return it as an ARRAY
+  with ONE string per paragraph (each roughly 1–3 sentences). Never concatenate the
+  paragraphs into one block, and never use markdown, bullet characters or "\\n" inside
+  a string — the array itself carries the paragraph breaks the UI renders.
+- Be honest about competitive or non-linear fields — the ladder shows direction,
+  not a promise.
+Respond only by calling the build_climb_ladder tool. Do not write prose.\
+"""
+
+_CLIMB_TOOL = {
+    "name": "build_climb_ladder",
+    "description": "Return a structured career ladder and commentary for the given job role.",
+    "input_schema": {
+        "type": "object",
+        "required": ["ladder", "commentary"],
+        "properties": {
+            "ladder": {
+                "type": "array",
+                "description": "3–5 rungs ordered low → high seniority",
+                "items": {
+                    "type": "object",
+                    "required": ["role", "stage", "marker"],
+                    "properties": {
+                        "role":   {"type": "string", "description": "Real, recognisable UK job title"},
+                        "stage":  {"type": "string", "description": "Short caption ≤18 chars"},
+                        "marker": {"type": "string", "enum": ["from", "current", "step", "goal"]}
+                    }
+                }
+            },
+            "commentary": {
+                "type": "array",
+                "description": "2–3 short paragraphs, one string each — no markdown, no \\n inside strings",
+                "items": {"type": "string"}
+            }
+        }
+    }
+}
+
+@app.get("/jobs/<int:job_id>/ladder")
+def job_ladder(job_id):
+    jobs_conn = sqlite3.connect(JOBS_DB)
+    jobs_conn.row_factory = sqlite3.Row
+
+    # Cache check
+    cached = jobs_conn.execute(
+        "SELECT ladder_json, ladder_cache_version FROM job_progression_cache "
+        "WHERE job_id = ? AND ladder_json IS NOT NULL",
+        (job_id,)
+    ).fetchone()
+    if cached and cached["ladder_cache_version"] == LADDER_CACHE_VERSION:
+        jobs_conn.close()
+        print(f"[ladder] job_id={job_id} cache hit (v{LADDER_CACHE_VERSION})", flush=True)
+        import json as _json
+        return jsonify(_json.loads(cached["ladder_json"]))
+
+    # Fetch the job's expert-written fields
+    job = jobs_conn.execute(
+        "SELECT id, title, overview, typical_duties, entry_routes, "
+        "career_prospects, progression FROM jobs WHERE id = ?",
+        (str(job_id),)
+    ).fetchone()
+    if not job:
+        jobs_conn.close()
+        return jsonify({"error": "Job not found"}), 404
+
+    title         = job["title"] or ""
+    overview      = job["overview"] or ""
+    typical_duties = job["typical_duties"] or ""
+    entry_routes  = job["entry_routes"] or ""
+    career_prog   = job["career_prospects"] or job["progression"] or ""
+
+    user_message = (
+        f"Here is a job profile.\n\n"
+        f"Title: {title}\n"
+        f"Overview: {overview}\n"
+        f"Typical duties: {typical_duties}\n\n"
+        f"ENTRY ROUTES (from career experts):\n{entry_routes}\n\n"
+        f"CAREER PROGRESSION (from career experts):\n{career_prog}\n\n"
+        f"Build the career ladder for someone whose current role is \"{title}\".\n"
+        f"Place that role on the ladder with marker \"current\", add the realistic rung(s) "
+        f"people reach it from (below) and progress to (above), and finish with the single "
+        f"senior destination as \"goal\". Then write the commentary as 2–3 short paragraphs "
+        f"(one array item each) on what the climb really looks like and any genuine lateral "
+        f"moves or specialisms."
+    )
+
+    print(f"[ladder] job_id={job_id} title={title!r} — calling Sonnet", flush=True)
+
+    try:
+        resp = _anthropic_post({
+            "model":       SONNET_MODEL,
+            "max_tokens":  600,
+            "system":      _CLIMB_SYSTEM_PROMPT,
+            "tools":       [_CLIMB_TOOL],
+            "tool_choice": {"type": "tool", "name": "build_climb_ladder"},
+            "messages":    [{"role": "user", "content": user_message}],
+        }, call_site="ladder")
+
+        tool_use = next(
+            (b for b in resp.json().get("content", []) if b.get("type") == "tool_use"),
+            None
+        )
+        if not tool_use:
+            raise ValueError("no tool_use block in response")
+
+        result  = tool_use["input"]
+        ladder  = result.get("ladder", [])
+        commentary = result.get("commentary", [])
+
+        # Validate: must have 2+ rungs with exactly one "current"
+        current_count = sum(1 for r in ladder if r.get("marker") == "current")
+        if len(ladder) < 2 or current_count != 1:
+            raise ValueError(f"invalid ladder shape: {len(ladder)} rungs, {current_count} current")
+
+        import json as _json
+        payload     = {"ladder": ladder, "commentary": commentary}
+        payload_str = _json.dumps(payload)
+
+        # Write to cache
+        existing = jobs_conn.execute(
+            "SELECT job_id FROM job_progression_cache WHERE job_id = ?", (job_id,)
+        ).fetchone()
+        try:
+            if existing:
+                jobs_conn.execute(
+                    "UPDATE job_progression_cache SET ladder_json = ?, ladder_cache_version = ? WHERE job_id = ?",
+                    (payload_str, LADDER_CACHE_VERSION, job_id)
+                )
+            else:
+                jobs_conn.execute(
+                    "INSERT INTO job_progression_cache (job_id, ladder_json, ladder_cache_version) VALUES (?, ?, ?)",
+                    (job_id, payload_str, LADDER_CACHE_VERSION)
+                )
+            jobs_conn.commit()
+        except Exception as e:
+            print(f"[ladder] cache write failed ({e})", flush=True)
+
+        jobs_conn.close()
+        return jsonify(payload)
+
+    except Exception as e:
+        print(f"[ladder] Sonnet call failed ({e}) — returning empty", flush=True)
+        jobs_conn.close()
+        return jsonify({"ladder": [], "commentary": []})
 
 
 @app.post("/saved/campuses")

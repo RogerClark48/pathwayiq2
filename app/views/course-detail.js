@@ -4,9 +4,11 @@ import { go }                                        from '../router.js';
 import { state, isSaved, toggleSave, refreshSavedBadges } from '../state.js';
 import { logEvent }                                  from '../analytics.js';
 import { subject, subjectIconSvg }                   from '../subjects.js';
+import { renderProse }                               from '../dom.js';
 
 const MODE_LABELS = { FT: 'Full-time', PT: 'Part-time', 'FT/PT': 'Full or Part-time' };
 function modeLabel(m) { return m ? (MODE_LABELS[m] || m) : null; }
+function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 const BOOKMARK_EMPTY = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
@@ -64,6 +66,9 @@ export function CourseDetailView(slices = {}) {
 
 function renderDetail(el, d, courseId, courseTitle, backRoute) {
   const s = subject(d.ssa_code);
+
+  // Propagate subject colour to the whole view so cd-cta bullets inherit it
+  el.style.setProperty('--sub', s.colour);
 
   // ── Coloured header ───────────────────────────────────────────────────────
   const head = document.createElement('div');
@@ -179,13 +184,10 @@ function renderDetail(el, d, courseId, courseTitle, backRoute) {
     cta.className = 'cd-cta';
 
     const cardJobs = d.pathways.card_jobs || [];
-    const shown    = cardJobs.slice(0, 2);
-    const more     = cardJobs.length - shown.length;
 
-    shown.forEach(j => logEvent('career_impression', 'job', j.job_id, j.title));
+    cardJobs.forEach(j => logEvent('career_impression', 'job', j.job_id, j.title));
 
-    const pillsHtml = shown.map(j => `<span>${j.title}</span>`).join('')
-      + (more > 0 ? `<span class="more">+${more} roles</span>` : '');
+    const pillsHtml = cardJobs.map(j => `<span>${escapeHtml(j.title)}</span>`).join('');
 
     cta.innerHTML = `
       <span class="lbl">Where this could lead</span>
@@ -242,12 +244,7 @@ function overviewPane(d) {
   }
 
   // Overview prose
-  if (d.overview) {
-    const p = document.createElement('p');
-    p.className = 'nb-body';
-    p.textContent = d.overview;
-    frag.appendChild(p);
-  }
+  if (d.overview) frag.appendChild(renderProse(d.overview));
 
   // Course URL — the primary apply action, must survive redesign
   if (d.course_url) {
@@ -280,19 +277,11 @@ function learnPane(content) {
     });
     frag.appendChild(ol);
   } else {
-    const p = document.createElement('p');
-    p.className = 'nb-body';
-    p.textContent = content;
-    frag.appendChild(p);
+    frag.appendChild(renderProse(content));
   }
   return frag;
 }
 
 function textPane(text) {
-  const frag = document.createDocumentFragment();
-  const p    = document.createElement('p');
-  p.className = 'nb-body';
-  p.textContent = text;
-  frag.appendChild(p);
-  return frag;
+  return renderProse(text);
 }

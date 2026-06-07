@@ -2460,7 +2460,7 @@ body {
   pointer-events: none;
 }
 .cd-head .wm svg { width: 120px; height: 120px; stroke: #fff; stroke-width: 1.4; }
-.cd-bar { display: flex; justify-content: space-between; margin-bottom: 12px; }
+.cd-bar { display: flex; justify-content: space-between; margin-bottom: 12px; position: relative; z-index: 2; }
 .cd-bar .ic, .cv-bar .ic {
   width: 30px; height: 30px;
   border-radius: 50%;
@@ -2592,6 +2592,10 @@ body {
   color: var(--ink-2);
 }
 
+/* ── Shared prose rhythm ─────────────────────────────────────────────────── */
+.prose p { font-size: 13.5px; line-height: 1.65; color: var(--ink-2); margin: 0; }
+.prose p + p { margin-top: 10px; }
+
 /* ── Pinned career bar ───────────────────────────────────────────────────── */
 .cd-cta {
   background: var(--surface);
@@ -2609,21 +2613,9 @@ body {
   text-transform: uppercase;
   color: var(--muted);
 }
-.cd-cta .pills { display: flex; gap: 6px; flex-wrap: wrap; }
-.cd-cta .pills span {
-  font-size: 11px;
-  border: 1px solid var(--hair);
-  border-radius: 999px;
-  padding: 4px 10px;
-  color: var(--ink-2);
-}
-.cd-cta .pills .more {
-  background: var(--bg-2);
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  border-color: transparent;
-}
+.cd-cta .pills { display: flex; flex-wrap: wrap; gap: 5px 13px; font-size: 12.5px; line-height: 1.35; color: var(--ink-2); }
+.cd-cta .pills span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--ink-2); }
+.cd-cta .pills span::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: color-mix(in srgb, var(--sub, var(--sub-neutral)) 60%, var(--hair)); flex: none; }
 .btn-blue {
   background: var(--ff-blue);
   color: #fff;
@@ -2654,7 +2646,7 @@ body {
 }
 .cv-head .wm { position: absolute; right: -16px; top: -14px; opacity: .16; pointer-events: none; }
 .cv-head .wm svg { width: 118px; height: 118px; stroke: #fff; stroke-width: 1.4; }
-.cv-bar { display: flex; justify-content: space-between; margin-bottom: 12px; }
+.cv-bar { display: flex; justify-content: space-between; margin-bottom: 12px; position: relative; z-index: 2; }
 .cv-head h4 {
   font-family: var(--font-display);
   font-size: 21px;
@@ -2826,3 +2818,79 @@ body {
   max-height: 280px;
   overflow-y: auto;
 }
+
+/* ── Climb ladder ─────────────────────────────────────────────────────────── */
+
+.jd-climb { margin-top: 6px; }
+
+.jd-step {
+  position: relative;
+  padding: 0 0 16px 26px;
+}
+
+/* vertical connector line — hidden on last rung */
+.jd-step::before {
+  content: "";
+  position: absolute;
+  left: 5px; top: 5px; bottom: 0;
+  width: 2px;
+  background: color-mix(in srgb, var(--sub, var(--sub-neutral)) 32%, var(--hair));
+}
+.jd-step:last-child::before { display: none; }
+
+/* node dot */
+.jd-step .d {
+  position: absolute;
+  left: 0; top: 2px;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  border: 2.5px solid var(--sub, var(--sub-neutral));
+  background: var(--surface);
+}
+
+/* current — soft fill */
+.jd-step.current .d {
+  background: color-mix(in srgb, var(--sub, var(--sub-neutral)) 28%, #fff);
+}
+
+/* goal — solid fill */
+.jd-step.goal .d {
+  background: var(--sub, var(--sub-neutral));
+}
+
+.jd-step b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.jd-step.goal b {
+  color: color-mix(in srgb, var(--sub, var(--sub-neutral)) 72%, var(--ink));
+}
+
+.jd-step em {
+  display: block;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.2;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.jd-step.current em {
+  color: var(--sub, var(--sub-neutral));
+}
+
+/* commentary paragraphs beneath the ladder */
+.jd-climb-prose { margin-top: 14px; }
+.jd-climb-prose p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  margin: 0;
+}
+.jd-climb-prose p + p { margin-top: 10px; }

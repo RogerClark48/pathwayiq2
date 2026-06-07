@@ -2,6 +2,7 @@
 
 import { state, submitMessage, setWaiting, setCourseList, resetSession } from '../state.js';
 import { bookmarkButton } from '../bookmarks.js';
+import { splitProse } from '../dom.js';
 import { postWelcomeChat } from '../api.js';
 import { go } from '../router.js';
 import { logEvent } from '../analytics.js';
@@ -88,7 +89,19 @@ function makeBubble(role, text) {
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
-    bubble.innerHTML = linkify(text);
+    const paras = splitProse(text.trim()).filter(Boolean);
+    if (paras.length > 1) {
+      const prose = document.createElement('div');
+      prose.className = 'prose';
+      paras.forEach(par => {
+        const p = document.createElement('p');
+        p.innerHTML = linkify(par);  // linkify HTML-escapes before injecting links
+        prose.appendChild(p);
+      });
+      bubble.appendChild(prose);
+    } else {
+      bubble.innerHTML = linkify(text);
+    }
     stack.appendChild(bubble);
 
     wrap.appendChild(av);

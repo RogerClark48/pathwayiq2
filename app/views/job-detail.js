@@ -3,7 +3,8 @@
 import { go }                                              from '../router.js';
 import { state, isSaved, toggleSave, unsaveItem, saveItem } from '../state.js';
 import { logEvent }                                        from '../analytics.js';
-import { subject }                                         from '../subjects.js';
+import { subject, subjectIconSvg }                         from '../subjects.js';
+import { renderProse, renderField, splitProse }            from '../dom.js';
 
 // Generic role icon for the header watermark (intentionally not a subject icon)
 const ROLE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -63,7 +64,7 @@ export function JobDetailView(slices = {}) {
     })
     .then(d => {
       el.innerHTML = '';
-      renderDetail(el, d, jobId, jobTitle, backRoute, backSlices, accent);
+      renderDetail(el, d, jobId, jobTitle, backRoute, backSlices, accent, slices.ssa);
     })
     .catch(err => {
       console.error('[job-detail]', err);
@@ -75,14 +76,17 @@ export function JobDetailView(slices = {}) {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
-function renderDetail(el, d, jobId, jobTitle, backRoute, backSlices, accent) {
+function renderDetail(el, d, jobId, jobTitle, backRoute, backSlices, accent, ssa) {
+  // Propagate subject colour to the whole view so notebook panes (Climb) inherit it
+  el.style.setProperty('--sub', accent);
+
   // ── Header ────────────────────────────────────────────────────────────────
   const head = document.createElement('div');
   head.className = 'jd-head';
   head.style.setProperty('--sub', accent);
 
   head.innerHTML = `
-    <span class="wm" aria-hidden="true">${ROLE_SVG}</span>
+    <span class="wm" aria-hidden="true">${subjectIconSvg(ssa)}</span>
     <div class="cd-bar">
       <button class="ic jd-back" aria-label="Back">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -116,7 +120,7 @@ function renderDetail(el, d, jobId, jobTitle, backRoute, backSlices, accent) {
   };
   updateSaveBtn();
   saveBtn.addEventListener('click', () => {
-    toggleSave({ id: jobId, type: 'job', title: jobTitle, ssa: slices?.ssa, subtitle: sourceName(d.source) });
+    toggleSave({ id: jobId, type: 'job', title: jobTitle, ssa, subtitle: sourceName(d.source) });
     updateSaveBtn();
   });
 
@@ -227,12 +231,7 @@ function overviewPane(d) {
     frag.appendChild(grid);
   }
 
-  if (d.overview) {
-    const p = document.createElement('p');
-    p.className = 'nb-body';
-    p.textContent = d.overview;
-    frag.appendChild(p);
-  }
+  if (d.overview) frag.appendChild(renderProse(d.overview));
 
   if (d.source_url) {
     const a = document.createElement('a');
@@ -247,7 +246,12 @@ function overviewPane(d) {
   if (d.employer_text) {
     const gm = document.createElement('div');
     gm.className = 'jd-gm';
-    gm.innerHTML = `<h6>Working in Greater Manchester</h6><p>${d.employer_text}</p>`;
+    const gmHead = document.createElement('h6');
+    gmHead.textContent = 'Working in Greater Manchester';
+    const gmBody = document.createElement('p');
+    gmBody.textContent = d.employer_text;
+    gm.appendChild(gmHead);
+    gm.appendChild(gmBody);
     frag.appendChild(gm);
   }
 
@@ -257,12 +261,7 @@ function overviewPane(d) {
 function dutiesPane(d) {
   const frag = document.createDocumentFragment();
 
-  if (d.typical_duties) {
-    const p = document.createElement('p');
-    p.className = 'nb-body';
-    p.textContent = d.typical_duties;
-    frag.appendChild(p);
-  }
+  if (d.typical_duties) frag.appendChild(renderField(d.typical_duties));
 
   if (d.skills_required) {
     const h = document.createElement('h6');
@@ -284,12 +283,7 @@ function dutiesPane(d) {
 }
 
 function textPane(text) {
-  const frag = document.createDocumentFragment();
-  const p    = document.createElement('p');
-  p.className = 'nb-body';
-  p.textContent = text;
-  frag.appendChild(p);
-  return frag;
+  return renderField(text);
 }
 
 // Lazy — receives the pane element to populate into.
@@ -299,12 +293,73 @@ function loadClimb(pane, jobId) {
   loading.textContent = 'Loading…';
   pane.appendChild(loading);
 
+  fetch(`/jobs/${jobId}/ladder`)
+    .then(r => r.json())
+    .catch(() => null)
+    .then(data => {
+      loading.remove();
+      const rungs = Array.isArray(data?.ladder) ? data.ladder : [];
+      const paras = Array.isArray(data?.commentary) ? data.commentary : [];
+      const hasLadder = rungs.length >= 2 && rungs.some(r => r.marker === 'current');
+
+      if (hasLadder) {
+        const lbl = document.createElement('p');
+        lbl.className = 'nb-label';
+        lbl.textContent = 'Where it leads';
+        pane.appendChild(lbl);
+        pane.appendChild(renderLadder(rungs));
+      }
+
+      if (paras.length) {
+        pane.appendChild(renderCommentary(paras));
+      }
+
+      if (!hasLadder && !paras.length) {
+        renderProseFallback(pane, jobId);
+        return;
+      }
+
+      logEvent('progression_open', 'job', jobId, null);
+    });
+}
+
+function renderLadder(rungs) {
+  const box = document.createElement('div');
+  box.className = 'jd-climb';
+  rungs.forEach(r => {
+    const cls = 'jd-step'
+      + (r.marker === 'goal'    ? ' goal'    : '')
+      + (r.marker === 'current' ? ' current' : '');
+    const step = document.createElement('div');
+    step.className = cls;
+
+    const dot  = document.createElement('span');
+    dot.className = 'd';
+
+    const title = document.createElement('b');
+    title.textContent = r.role;   // textContent — never innerHTML for model output
+
+    const caption = document.createElement('em');
+    caption.textContent = r.stage;
+
+    step.appendChild(dot);
+    step.appendChild(title);
+    step.appendChild(caption);
+    box.appendChild(step);
+  });
+  return box;
+}
+
+function renderCommentary(paras) {
+  return renderProse(paras, 'jd-climb-prose');
+}
+
+function renderProseFallback(pane, jobId) {
   fetch(`/jobs/${jobId}/explain`)
     .then(r => r.json())
     .then(d => {
-      loading.remove();
-      const text = (d.text || '').trim();
-      if (!text) {
+      const raw = (d.text || '').trim();
+      if (!raw) {
         const p = document.createElement('p');
         p.className = 'nb-body nb-muted';
         p.textContent = 'No career pathway information yet.';
@@ -312,12 +367,9 @@ function loadClimb(pane, jobId) {
         return;
       }
       logEvent('progression_open', 'job', jobId, null);
-      const narr = document.createElement('p');
-      narr.className = 'nb-body';
-      narr.textContent = text;
-      pane.appendChild(narr);
+      pane.appendChild(renderProse(raw, 'jd-climb-prose'));
     })
-    .catch(() => loading.remove());
+    .catch(() => {});
 }
 
 // Lazy — called on first expand of the CTA bar.
@@ -401,6 +453,7 @@ function loadCoursesInto(panel, jobId) {
             previewBody.textContent  = course.overview || '';
             updatePreviewSave(course);
             preview.hidden = false;
+            panel.scrollTop = panel.scrollHeight;
           }
         });
 
