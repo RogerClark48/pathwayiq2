@@ -1,111 +1,123 @@
-/* Screen 1 — subject multi-select (only welcome screen) */
+/* Landing / chat-home — Finn greeting, ask-me input, subject tiles, starter chips */
 
-import { state, toggleSubject } from '../state.js';
-import { go } from '../router.js';
+import { state }          from '../state.js';
+import { go }             from '../router.js';
 import { loadWelcomeData } from '../api.js';
-import { SSA_LABELS } from '../ssa.js';
+import { subject, subjectIconSvg } from '../subjects.js';
 
-function ssaCount(data, ssa) {
-  return Object.values(data.counts).reduce((sum, row) => sum + (row[ssa] || 0), 0);
+const STARTER_CHIPS = [
+  "I'm good with my hands",
+  "Something with computers",
+  "I want a job that pays well",
+  "I'm not sure what I want yet",
+];
+
+function escAttr(s) {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
-function totalCount(data, subjects) {
-  if (subjects.size === 0) return 0;
-  let total = 0;
-  subjects.forEach(ssa => { total += ssaCount(data, ssa); });
-  return total;
+function tileHtml(ssa) {
+  const s = subject(ssa);
+  return `<button class="mtile" data-seed="${escAttr(s.label)} courses" style="--sub:${s.colour}">
+    <span class="wm">${subjectIconSvg(ssa)}</span>
+    <span class="ic">${subjectIconSvg(ssa)}</span>
+    <b>${s.label}</b>
+  </button>`;
 }
 
 export function WelcomeView() {
+  const savedCount = state.saved.items.length;
+
   const el = document.createElement('div');
-  el.className = 'view view-welcome';
+  el.className = 'view view-landing';
 
   el.innerHTML = `
-    <div class="view-body">
-      <p class="welcome-intro">
-        FutureFinder helps you find out what course at the Greater Manchester
-        Institute of Technology (GMIoT) you might want to study, and where it
-        could take you. Start by telling us which subjects interest you.
-      </p>
+    <header class="la-top">
+      <div class="brandlock-a">
+        <img src="assets/brand/logo-mark.png" alt="">
+        <div class="wm">
+          <span class="nm">FutureFinder</span>
+          <span class="inst">Greater Manchester IoT</span>
+        </div>
+      </div>
+      <button class="la-saved" aria-label="Saved items">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 4h6a2 2 0 0 1 2 2v14l-5-3-5 3V6a2 2 0 0 1 2-2"/>
+        </svg>
+        <span class="ct" data-saved-count${savedCount === 0 ? ' hidden' : ''}>${savedCount}</span>
+      </button>
+    </header>
 
-      <p class="prompt-label">Which subjects interest you?</p>
-      <p class="prompt-sub">Pick one or more</p>
-
-      <div class="subject-grid" id="subject-grid">
-        <div class="chip-skeleton"></div>
-        <div class="chip-skeleton"></div>
-        <div class="chip-skeleton"></div>
-        <div class="chip-skeleton"></div>
-        <div class="chip-skeleton"></div>
-        <div class="chip-skeleton"></div>
+    <div class="la-body">
+      <div class="la-hello">
+        <h3>Hi, I'm Finn.</h3>
+        <p>Tell me what you enjoy — or where you'd like to go next — and I'll find GMIoT courses and show where they lead.</p>
       </div>
 
-      <p class="course-count" id="course-count"></p>
-    </div>
+      <div class="la-input">
+        <input type="text" id="la-text" placeholder="Ask me anything…"
+               autocomplete="off" autocorrect="off" spellcheck="false">
+        <button class="send" id="la-send" aria-label="Send">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
 
-    <div class="view-footer">
-      <button class="btn-primary btn-disabled" id="btn-show" disabled>Show me →</button>
+      <div class="la-divider">Explore by subject</div>
+      <div class="la-tiles" id="la-tiles">
+        <div class="la-tile-skeleton"></div>
+        <div class="la-tile-skeleton"></div>
+        <div class="la-tile-skeleton"></div>
+        <div class="la-tile-skeleton"></div>
+        <div class="la-tile-skeleton"></div>
+        <div class="la-tile-skeleton"></div>
+      </div>
+
+      <div class="la-divider">Or just say…</div>
+      <div class="la-chips">
+        ${STARTER_CHIPS.map(t => `<button class="la-chip" data-seed="${escAttr(t)}">${t}</button>`).join('')}
+      </div>
     </div>
   `;
 
-  const subjectGrid = el.querySelector('#subject-grid');
-  const countEl     = el.querySelector('#course-count');
-  const btnShow     = el.querySelector('#btn-show');
+  const textInput = el.querySelector('#la-text');
+  const sendBtn   = el.querySelector('#la-send');
+  const tilesEl   = el.querySelector('#la-tiles');
 
+  function seedChat(text) {
+    go('chat-first', { prefill: text, autosend: true });
+  }
+
+  sendBtn.addEventListener('click', () => {
+    const text = textInput.value.trim();
+    if (text) seedChat(text);
+  });
+
+  textInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const text = textInput.value.trim();
+      if (text) seedChat(text);
+    }
+  });
+
+  // Subject tiles — built from /api/welcome-data, ordered by SSA code ascending
   loadWelcomeData().then(data => {
-    const subjects = data.ssa_codes
-      .map(ssa => {
-        const label = SSA_LABELS[ssa];
-        if (!label) { console.warn(`WelcomeView: unknown SSA code "${ssa}" — skipped`); return null; }
-        return { ssa, label };
-      })
-      .filter(Boolean)
-      .sort((a, b) => Number(a.ssa) - Number(b.ssa));
-
-    function chipHtml({ ssa, label }) {
-      const n   = ssaCount(data, ssa);
-      const sel = state.filter.subjects.has(ssa);
-      return `
-        <button class="subject-chip${sel ? ' selected' : ''}"
-                data-ssa="${ssa}"
-                aria-pressed="${sel}">
-          <span class="chip-tick" aria-hidden="true"></span>
-          <span class="chip-content">
-            <span class="chip-label">${label}</span>
-            <span class="chip-count">${n} course${n !== 1 ? 's' : ''}</span>
-          </span>
-        </button>
-      `;
-    }
-
-    subjectGrid.innerHTML = subjects.map(chipHtml).join('');
-
-    const n = totalCount(data, state.filter.subjects);
-    countEl.textContent = state.filter.subjects.size > 0 ? `${n} courses available` : '';
-
-    if (state.filter.subjects.size > 0) {
-      btnShow.disabled = false;
-      btnShow.classList.remove('btn-disabled');
-    }
-
-    subjectGrid.querySelectorAll('.subject-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        toggleSubject(chip.dataset.ssa);
-        const sel = state.filter.subjects.has(chip.dataset.ssa);
-        chip.classList.toggle('selected', sel);
-        chip.setAttribute('aria-pressed', String(sel));
-        const count = totalCount(data, state.filter.subjects);
-        const hasAny = state.filter.subjects.size > 0;
-        countEl.textContent = hasAny ? `${count} courses available` : '';
-        btnShow.disabled = !hasAny;
-        btnShow.classList.toggle('btn-disabled', !hasAny);
-      });
+    const ssaCodes = (data.ssa_codes || []).slice().sort((a, b) => Number(a) - Number(b));
+    tilesEl.innerHTML = ssaCodes.map(tileHtml).join('');
+    tilesEl.querySelectorAll('.mtile').forEach(btn => {
+      btn.addEventListener('click', () => seedChat(btn.dataset.seed));
     });
   });
 
-  btnShow.addEventListener('click', () => {
-    if (state.filter.subjects.size > 0) go('start');
+  // Starter chips
+  el.querySelectorAll('.la-chip').forEach(btn => {
+    btn.addEventListener('click', () => seedChat(btn.dataset.seed));
   });
+
+  // Saved-items button
+  el.querySelector('.la-saved').addEventListener('click', () => go('saved-list', { backRoute: 'welcome' }));
 
   return el;
 }

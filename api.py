@@ -2481,6 +2481,7 @@ def course_detail_ff(course_id):
     return jsonify({
         "course_id":          row["course_id"],
         "course_title":       row["course_title"],
+        "ssa_code":           row["ssa_code"],
         "provider":           row["provider_name"] or "",
         "campus":             row["campus"] or "",
         "qual_type":          row["qual_type"] or "",

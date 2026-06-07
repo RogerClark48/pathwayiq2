@@ -16,6 +16,7 @@ export function go(name, slices = {}) {
   if (!fn) throw new Error(`Router: no view registered as "${name}"`);
 
   const el = root();
+  document.body.dataset.view = name;
   el.scrollTop = 0;
   el.innerHTML = '';
   el.appendChild(fn(slices));

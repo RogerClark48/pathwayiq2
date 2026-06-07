@@ -1,9 +1,11 @@
-/* Chat-first start screen */
+/* Chat thread — Finn header, branded bubbles, in-chat course card pivot */
 
-import { state, submitMessage, setWaiting, setCourseList } from '../state.js';
+import { state, submitMessage, setWaiting, setCourseList, resetSession } from '../state.js';
+import { bookmarkButton } from '../bookmarks.js';
 import { postWelcomeChat } from '../api.js';
 import { go } from '../router.js';
 import { logEvent } from '../analytics.js';
+import { subject, subjectIconSvg } from '../subjects.js';
 
 const WELCOME_TEXT =
   "Hi — I'm here to help you find a course at the Greater Manchester " +
@@ -38,19 +40,18 @@ const STARTER_CHIP_POOL = [
   "What jobs are growing around here?",
 ];
 
-function pickStarterChips() {
-  const fixed = "Show me some ideas";
-  const pool  = STARTER_CHIP_POOL.slice();
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-  return [...pool.slice(0, 4), fixed];
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const MODE_LABELS = { FT: 'Full-time', PT: 'Part-time', 'FT/PT': 'Full or Part-time' };
+function modeLabel(mode) { return mode ? (MODE_LABELS[mode] || mode) : null; }
+
+function splitTitle(raw) {
+  const m = (raw || '').match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+  return m ? { title: m[1].trim(), specialism: m[2].trim() } : { title: raw || '', specialism: null };
 }
 
 function linkify(text) {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  // single pass: markdown [label](url) takes priority, bare URLs as fallback
   return escaped.replace(
     /\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s<]+)/g,
     (_, label, mdUrl, bareUrl) => {
@@ -61,26 +62,134 @@ function linkify(text) {
   );
 }
 
-function makeBubble(role, text, animate = false) {
-  const wrap  = document.createElement('div');
-  wrap.className = `chat-bubble chat-bubble--${role}${animate ? ' chat-bubble--animate' : ''}`;
-  const inner = document.createElement('div');
-  inner.className = 'bubble-text';
-  if (role === 'bot') {
-    inner.innerHTML = linkify(text);
-  } else {
-    inner.textContent = text;
+function pickStarterChips() {
+  const fixed = "Show me some ideas";
+  const pool  = STARTER_CHIP_POOL.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  wrap.appendChild(inner);
+  return [...pool.slice(0, 4), fixed];
+}
+
+// ── DOM builders ──────────────────────────────────────────────────────────────
+
+function makeBubble(role, text) {
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role === 'bot' ? 'ai' : 'me'}`;
+
+  if (role === 'bot') {
+    const av = document.createElement('span');
+    av.className = 'av';
+    av.innerHTML = `<img src="assets/brand/logo-mark.png" alt="">`;
+
+    const stack = document.createElement('div');
+    stack.className = 'stack';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.innerHTML = linkify(text);
+    stack.appendChild(bubble);
+
+    wrap.appendChild(av);
+    wrap.appendChild(stack);
+  } else {
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+  }
+
   return wrap;
 }
 
-function makeCtaButton(text, courseList) {
-  const btn = document.createElement('button');
-  btn.className = 'chat-cta-btn';
-  btn.textContent = text;
-  btn.addEventListener('click', () => go('course-list', { courseList }));
-  return btn;
+function makeThinkingBubble() {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ai';
+  wrap.innerHTML = `
+    <span class="av"><img src="assets/brand/logo-mark.png" alt=""></span>
+    <div class="stack"><div class="bubble bubble--thinking">···</div></div>`;
+  return wrap;
+}
+
+function makeCourseCard(course) {
+  const s = subject(course.ssa_code);
+  const rawTitle = course.course_title || course.title || '';
+  const { title, specialism } = splitTitle(rawTitle);
+  const lvlQual  = course.qual_type || (course.level != null ? `L${course.level}` : '');
+  const provider = course.campus_name || course.provider_name || course.provider || '';
+
+  const chipsHtml = [
+    course.qual_type          ? `<span>${course.qual_type}</span>`           : '',
+    modeLabel(course.mode)    ? `<span>${modeLabel(course.mode)}</span>`     : '',
+  ].filter(Boolean).join('');
+
+  const card = document.createElement('div');
+  card.className = 'ck ck-course';
+  card.style.setProperty('--sub', s.colour);
+
+  card.innerHTML = `
+    <div class="cc-top">
+      <span class="wm">${subjectIconSvg(course.ssa_code)}</span>
+      ${lvlQual ? `<span class="lvl">${lvlQual}</span>` : ''}
+      <div class="cc-tt">
+        <b>${title}</b>
+        <span>${provider || specialism || ''}</span>
+      </div>
+    </div>
+    ${chipsHtml ? `<div class="cc-bd"><div class="cc-chips">${chipsHtml}</div></div>` : ''}
+    <div class="ck-more">Open course  ›</div>`;
+
+  const openCourse = () => go('course-detail', {
+    courseId:    course.course_id,
+    courseTitle: rawTitle,
+    backRoute:   'chat-first',
+  });
+
+  card.querySelector('.ck-more').addEventListener('click', e => { e.stopPropagation(); openCourse(); });
+  card.addEventListener('click', openCourse);
+
+  // Bookmark in card body — stopPropagation handled inside bookmarkButton
+  card.querySelector('.cc-bd')?.appendChild(bookmarkButton({
+    id:       course.course_id,
+    type:     'course',
+    title:    rawTitle,
+    ssa:      course.ssa_code,
+    subtitle: [course.qual_type, provider].filter(Boolean).join(' · '),
+  }));
+
+  return card;
+}
+
+// Renders as a .msg.ai: Finn avatar + stack containing the lead course card + see-all button.
+function makePivotBlock(courseList) {
+  const courses = (courseList && courseList.courses) || [];
+  const lead = courses[0];
+  if (!lead) return null;
+
+  const total = courses.length;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ai';
+
+  const av = document.createElement('span');
+  av.className = 'av';
+  av.innerHTML = `<img src="assets/brand/logo-mark.png" alt="">`;
+
+  const stack = document.createElement('div');
+  stack.className = 'stack';
+
+  stack.appendChild(makeCourseCard(lead));
+
+  const seeAll = document.createElement('button');
+  seeAll.className = 'see-all';
+  seeAll.textContent = `See all ${total} courses on the map →`;
+  seeAll.addEventListener('click', () => go('course-list', { courseList, backRoute: 'chat-first' }));
+  stack.appendChild(seeAll);
+
+  wrap.appendChild(av);
+  wrap.appendChild(stack);
+  return wrap;
 }
 
 function makeQualMapButton() {
@@ -104,42 +213,54 @@ function makeStarterChips() {
   return wrap;
 }
 
-function makeSuggestionChips(suggestions) {
-  const wrap = document.createElement('div');
-  wrap.className = 'suggestion-chips';
-  suggestions.forEach(text => {
-    const btn = document.createElement('button');
-    btn.className = 'starter-chip suggestion-chip';
-    btn.dataset.text = text;
-    btn.textContent = text;
-    wrap.appendChild(btn);
-  });
-  return wrap;
-}
+// ── Main view ─────────────────────────────────────────────────────────────────
 
-export function StartChatView({ prefill } = {}) {
-  // Seed welcome message on first load; preserved across in-session navigations.
+export function StartChatView({ prefill, autosend } = {}) {
   if (state.chat.messages.length === 0) {
     state.chat.messages.push({ role: 'bot', text: WELCOME_TEXT });
   }
+
+  const savedCount = state.saved.items.length;
 
   const el = document.createElement('div');
   el.className = 'view view-chat';
 
   el.innerHTML = `
-    <div class="chat-top-bar">
-      <button class="chat-restart-btn" id="chat-restart">Start again</button>
+    <div class="chat-head">
+      <div class="id">
+        <img src="assets/brand/logo-mark.png" alt="Finn">
+        <div>
+          <div class="nm">Finn</div>
+          <div class="st">Your guide · online</div>
+        </div>
+      </div>
+      <div class="ch-actions">
+        <button class="ch-btn" id="chat-new" aria-label="New conversation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+        </button>
+        <button class="ch-btn" id="chat-saved" aria-label="Saved items">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 4h6a2 2 0 0 1 2 2v14l-5-3-5 3V6a2 2 0 0 1 2-2"/>
+          </svg>
+          <span class="ct" data-saved-count${savedCount === 0 ? ' hidden' : ''}>${savedCount}</span>
+        </button>
+      </div>
     </div>
+
     <div class="chat-body">
-      <div class="chat-messages" id="chat-messages"><div class="chat-spacer"></div></div>
-      <div class="chat-input-area">
-        <div class="chat-input-box">
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input-wrap">
+        <div class="chat-sugs" id="chat-sugs"></div>
+        <div class="chat-bar">
           <input type="text" class="chat-input-field" id="chat-input"
                  placeholder="Type your message…"
                  autocomplete="off" autocorrect="off" spellcheck="false">
-          <button class="chat-send-btn" id="chat-send" disabled aria-label="Send message">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"
-                 aria-hidden="true">
+          <button class="send chat-send-btn" id="chat-send" disabled aria-label="Send message">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <polygon points="22 2 15 22 11 13 2 9 22 2"/>
             </svg>
           </button>
@@ -148,12 +269,13 @@ export function StartChatView({ prefill } = {}) {
     </div>
   `;
 
-  const messagesEl  = el.querySelector('#chat-messages');
-  const chatInput   = el.querySelector('#chat-input');
-  const sendBtn     = el.querySelector('#chat-send');
-  const restartBtn  = el.querySelector('#chat-restart');
+  const messagesEl = el.querySelector('#chat-messages');
+  const chatInput  = el.querySelector('#chat-input');
+  const sendBtn    = el.querySelector('#chat-send');
+  const sugsEl     = el.querySelector('#chat-sugs');
 
-  restartBtn.addEventListener('click', () => {
+  // Home = new conversation (confirm before clearing)
+  el.querySelector('#chat-new').addEventListener('click', () => {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
     overlay.innerHTML = `
@@ -163,28 +285,30 @@ export function StartChatView({ prefill } = {}) {
           <button class="confirm-btn-cancel">Cancel</button>
           <button class="confirm-btn-ok">Start again</button>
         </div>
-      </div>
-    `;
+      </div>`;
     document.body.appendChild(overlay);
     overlay.querySelector('.confirm-btn-cancel').addEventListener('click', () => overlay.remove());
     overlay.querySelector('.confirm-btn-ok').addEventListener('click', () => {
       overlay.remove();
-      sessionStorage.removeItem('ff_session');
-      window.location.reload();
+      resetSession();
+      go('welcome');
     });
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   });
 
-  // Render existing messages.
+  el.querySelector('#chat-saved').addEventListener('click', () => go('saved-list', { backRoute: 'chat-first' }));
+
+  // Render persisted messages
   state.chat.messages.forEach(msg => {
     if (msg.role === 'cta') {
-      messagesEl.appendChild(makeCtaButton(msg.text, msg.courseList));
+      const block = makePivotBlock(msg.courseList);
+      if (block) messagesEl.appendChild(block);
     } else {
       messagesEl.appendChild(makeBubble(msg.role, msg.text));
     }
   });
 
-  // Starter chips — visible only while no user turn exists.
+  // Starter chips — visible only while no user turn exists
   const hasUserTurn = state.chat.messages.some(m => m.role === 'user');
   let starterEl = null;
   if (!hasUserTurn) {
@@ -197,11 +321,14 @@ export function StartChatView({ prefill } = {}) {
     if (prefill) {
       chatInput.value = prefill;
       sendBtn.disabled = false;
-      chatInput.focus();
+      if (autosend) {
+        submit();
+      } else {
+        chatInput.focus();
+      }
     }
   });
 
-  // Enable send when input has content.
   chatInput.addEventListener('input', () => {
     sendBtn.disabled = chatInput.value.trim() === '';
   });
@@ -210,40 +337,20 @@ export function StartChatView({ prefill } = {}) {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  function makeThinkingBubble() {
-    const wrap  = document.createElement('div');
-    wrap.className = 'chat-bubble chat-bubble--bot chat-bubble--thinking chat-bubble--animate';
-    const inner = document.createElement('div');
-    inner.className = 'bubble-text bubble-text--thinking';
-    inner.textContent = '···';
-    wrap.appendChild(inner);
-    return wrap;
-  }
-
-  let suggestionEl = null;
-
-  function clearSuggestions() {
-    if (suggestionEl) { suggestionEl.remove(); suggestionEl = null; }
-  }
-
   async function submit() {
     const text = chatInput.value.trim();
     if (!text || state.chat.isWaitingForResponse) return;
 
-    // Remove starter chips permanently on first user message.
     if (starterEl) { starterEl.remove(); starterEl = null; }
-
-    // Remove any suggestion chips from the previous turn.
-    clearSuggestions();
+    sugsEl.innerHTML = '';
 
     logEvent('chat_submit', null, null, null, { query: text });
     submitMessage(text);
-    messagesEl.appendChild(makeBubble('user', text, true));
+    messagesEl.appendChild(makeBubble('user', text));
     chatInput.value = '';
     sendBtn.disabled = true;
     scrollBottom();
 
-    // Show thinking indicator and lock input.
     const thinkingEl = makeThinkingBubble();
     messagesEl.appendChild(thinkingEl);
     scrollBottom();
@@ -254,30 +361,41 @@ export function StartChatView({ prefill } = {}) {
       const data = await postWelcomeChat(state.session.id, text, state.saved.items);
       thinkingEl.remove();
       const reply = data.bot_response;
-      state.chat.messages.push({ role: 'bot', text: reply });
-      messagesEl.appendChild(makeBubble('bot', reply, true));
-
-      if (data.suggestions?.length && !data.pivot_to_courses) {
-        suggestionEl = makeSuggestionChips(data.suggestions);
-        messagesEl.appendChild(suggestionEl);
-      }
-
-      if (data.show_qual_map) {
-        messagesEl.appendChild(makeQualMapButton());
-      }
 
       if (data.pivot_to_courses && data.course_list) {
+        // Finn's sentence bubble, then pivot block (card + see-all) as a second .msg.ai
+        state.chat.messages.push({ role: 'bot', text: reply });
+        messagesEl.appendChild(makeBubble('bot', reply));
+
         setCourseList(data.course_list);
-        state.chat.messages.push({ role: 'cta', text: 'See courses →', courseList: data.course_list });
-        messagesEl.appendChild(makeCtaButton('See courses →', data.course_list));
+        state.chat.messages.push({ role: 'cta', courseList: data.course_list });
+        const block = makePivotBlock(data.course_list);
+        if (block) messagesEl.appendChild(block);
+      } else {
+        state.chat.messages.push({ role: 'bot', text: reply });
+        messagesEl.appendChild(makeBubble('bot', reply));
+
+        if (data.suggestions?.length) {
+          data.suggestions.forEach(sug => {
+            const btn = document.createElement('button');
+            btn.textContent = sug;
+            btn.dataset.text = sug;
+            sugsEl.appendChild(btn);
+          });
+        }
+
+        if (data.show_qual_map) {
+          messagesEl.appendChild(makeQualMapButton());
+        }
       }
+
       scrollBottom();
     } catch (err) {
       console.error('[chat/welcome]', err);
       thinkingEl.remove();
       const reply = 'Something went wrong — please try again.';
       state.chat.messages.push({ role: 'bot', text: reply });
-      messagesEl.appendChild(makeBubble('bot', reply, true));
+      messagesEl.appendChild(makeBubble('bot', reply));
     } finally {
       setWaiting(false);
       chatInput.disabled = false;
@@ -290,13 +408,22 @@ export function StartChatView({ prefill } = {}) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
   });
 
-  // Chip tap — drop text into input, do not submit.
+  // Starter chip tap — auto-send
   messagesEl.addEventListener('click', e => {
     const chip = e.target.closest('.starter-chip');
-    if (!chip) return;
+    if (!chip || !chip.dataset.text) return;
     chatInput.value = chip.dataset.text;
     sendBtn.disabled = false;
-    chatInput.focus();
+    submit();
+  });
+
+  // Suggestion chip tap — auto-send
+  sugsEl.addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn || !btn.dataset.text) return;
+    chatInput.value = btn.dataset.text;
+    sendBtn.disabled = false;
+    submit();
   });
 
   return el;

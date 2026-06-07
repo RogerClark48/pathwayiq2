@@ -1,214 +1,176 @@
-/* Course list — horizontal carousel over map backdrop */
+/* Course list — Horizon carousel over map backdrop */
 
-import { go }         from '../router.js';
-import { logEvent }   from '../analytics.js';
-import { SSA_LABELS } from '../ssa.js';
+import { go }        from '../router.js';
+import { logEvent }  from '../analytics.js';
+import { subject, subjectHex, subjectIconSvg } from '../subjects.js';
+import { bookmarkButton } from '../bookmarks.js';
 
-// ── Subject colours (mid-to-deep, white-legible, hue-spread) ────────────────
-const SSA_COLOURS = {
-  '1':  '#1D7A6E',  // Health & Care — teal-green
-  '2':  '#2A6496',  // Science & Maths
-  '3':  '#4E7038',  // Agriculture & Land
-  '4':  '#3A5A78',  // Engineering & Manufacturing — deep slate-blue
-  '5':  '#B5651D',  // Construction & Built Environment — amber-brown
-  '6':  '#4B3F8F',  // Computing & IT — indigo-violet
-  '7':  '#7A5C3A',  // Retail & Commerce
-  '8':  '#4A7A5A',  // Hospitality & Tourism
-  '9':  '#B23A6E',  // Creative & Media — magenta-rose
-  '10': '#5A5A9A',  // History & Philosophy
-  '11': '#4A7A8A',  // Social Sciences
-  '12': '#7A3A8A',  // Languages & Culture
-  '13': '#3A6A8A',  // Education & Training
-  '14': '#5A6E5A',  // Life & Work
-  '15': '#6E6A5E',  // Business & Law — warm grey-taupe
-  '99': '#4C8B3F',  // Sustainability — leaf-green
-};
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-const DEFAULT_COLOUR = '#1A237E';
-
-function subjectColour(ssa_code) {
-  return SSA_COLOURS[String(ssa_code ?? '')] ?? DEFAULT_COLOUR;
-}
-
-// ── Mode display normalisation ───────────────────────────────────────────────
 const MODE_LABELS = { FT: 'Full-time', PT: 'Part-time', 'FT/PT': 'Full or Part-time' };
+function modeLabel(mode) { return mode ? (MODE_LABELS[mode] || mode) : null; }
 
-function modeLabel(mode) {
-  if (!mode) return null;
-  return MODE_LABELS[mode] || mode;
-}
-
-// ── Title → {title, specialism} ─────────────────────────────────────────────
-// Extracts parenthetical specialism: "HNC Foo (Bar Technician)" → {title:"HNC Foo", specialism:"Bar Technician"}
 function splitTitle(raw) {
-  const m = raw.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
-  if (m) return { title: m[1].trim(), specialism: m[2].trim() };
-  return { title: raw, specialism: null };
+  const m = (raw || '').match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+  return m ? { title: m[1].trim(), specialism: m[2].trim() } : { title: raw || '', specialism: null };
 }
 
-// ── Leaflet map pin ──────────────────────────────────────────────────────────
-function makePin(colour) {
-  const svg = `<svg width="20" height="28" viewBox="0 0 20 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M10 0C4.48 0 0 4.48 0 10C0 17.5 10 28 10 28C10 28 20 17.5 20 10C20 4.48 15.52 0 10 0Z" fill="${colour}" stroke="white" stroke-width="1.5"/>
-    <circle cx="10" cy="10" r="3.5" fill="white" opacity="0.9"/>
-  </svg>`;
-  return L.divIcon({
-    html:       svg,
-    iconSize:   [20, 28],
-    iconAnchor: [10, 28],
-    className:  '',
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function toMiles(km) { return km * 0.621371; }
+
+function getLocation(timeout = 2000) {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) { resolve(null); return; }
+    const timer = setTimeout(() => resolve(null), timeout);
+    navigator.geolocation.getCurrentPosition(
+      pos => { clearTimeout(timer); resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+      ()   => { clearTimeout(timer); resolve(null); }
+    );
   });
 }
 
-// ── Watermark SVG (building silhouette, placeholder) ─────────────────────────
-const WATERMARK_SVG = `<svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="cc-wm-icon">
-  <rect x="10" y="36" width="60" height="36" rx="2" fill="currentColor"/>
-  <polygon points="5,38 40,10 75,38" fill="currentColor"/>
-  <rect x="30" y="50" width="12" height="22" rx="1" fill="white" opacity="0.25"/>
-  <rect x="47" y="50" width="10" height="14" rx="1" fill="white" opacity="0.25"/>
-  <rect x="18" y="50" width="10" height="14" rx="1" fill="white" opacity="0.25"/>
-</svg>`;
+// ── Branded Leaflet pin ───────────────────────────────────────────────────────
+// subjectHex() gives raw hex — required because fill is injected into an off-DOM SVG string.
+// The icon stroke (#fff) is set via CSS on a live element, so that's fine.
 
-// ── Module-level map reference for cleanup on re-entry ───────────────────────
+function makePin(ssa) {
+  const hex  = subjectHex(ssa);
+  const icon = subjectIconSvg(ssa);
+  const html = `<div class="ffpin" style="--c:${hex}"><span class="drop">${icon}</span></div>`;
+  return L.divIcon({ html, iconSize: [30, 38], iconAnchor: [15, 34], className: 'ffpin-host' });
+}
+
+// ── Module-level map reference (cleaned up on re-entry) ───────────────────────
 let _activeMap = null;
 
-// ── Main view ────────────────────────────────────────────────────────────────
+// ── Main view ─────────────────────────────────────────────────────────────────
 export function CourseCarouselView(slices = {}) {
-  // Destroy previous Leaflet instance if view is re-mounted
   if (_activeMap) {
     try { _activeMap.remove(); } catch (_) {}
     _activeMap = null;
   }
 
-  const data    = slices.courseList || {};
-  const courses = data.courses || [];
+  const data      = slices.courseList || {};
+  const courses   = data.courses || [];
+  const backRoute = slices.backRoute || 'chat-first';
 
   const el = document.createElement('div');
   el.className = 'view view-course-carousel';
 
-  // ── Empty state ────────────────────────────────────────────────────────────
   if (courses.length === 0) {
     el.innerHTML = `
       <div class="carousel-empty">
         <p class="carousel-empty-text">No courses found.</p>
-        <button class="btn-back-chat">Back to chat</button>
+        <button class="btn-back-chat">← Back</button>
       </div>`;
-    el.querySelector('.btn-back-chat').addEventListener('click', () => go('chat-first'));
+    el.querySelector('.btn-back-chat').addEventListener('click', () => go(backRoute));
     return el;
   }
 
-  // ── Header label ───────────────────────────────────────────────────────────
-  const ssaCodes = [...new Set(courses.map(c => String(c.ssa_code ?? '')).filter(Boolean))];
-  const headerLabel = ssaCodes.length === 1
-    ? `${SSA_LABELS[ssaCodes[0]] || 'Courses'} · ${courses.length}`
-    : `Courses · ${courses.length}`;
+  // Brief skeleton while geolocation resolves (denied = instant; granted = fast)
+  el.innerHTML = `
+    <div class="carousel-stage">
+      <div class="carousel-map-bg"></div>
+      <div class="ccx-locating">
+        <span>Locating…</span>
+      </div>
+    </div>`;
 
-  // ── DOM skeleton ───────────────────────────────────────────────────────────
+  getLocation(2000).then(userLoc => {
+    if (!el.isConnected) return;
+    renderFull(el, courses, userLoc, backRoute);
+  });
+
+  return el;
+}
+
+// ── Full render ───────────────────────────────────────────────────────────────
+function renderFull(el, courses, userLoc, backRoute) {
+  // Shallow-copy and optionally annotate + sort by distance
+  const sorted = courses.map(c => ({ ...c }));
+  if (userLoc) {
+    sorted.forEach(c => {
+      c._distMi = (c.lat != null && c.lng != null)
+        ? toMiles(haversineKm(userLoc.lat, userLoc.lng, c.lat, c.lng))
+        : null;
+    });
+    sorted.sort((a, b) => (a._distMi ?? Infinity) - (b._distMi ?? Infinity));
+  }
+
+  const hasLoc = !!userLoc;
+
+  // Refine options — only show chips when there's more than one value
+  const modes  = [...new Set(sorted.map(c => modeLabel(c.mode)).filter(Boolean))];
+  const levels = [...new Set(sorted.map(c => c.level).filter(v => v != null))].sort((a, b) => a - b);
+  const showRefine = modes.length > 1 || levels.length > 1;
+
+  function subText(count) {
+    if (!hasLoc) return `${count} found`;
+    return count === sorted.length ? 'Near you · nearest first' : `${count} of ${sorted.length} · nearest first`;
+  }
+
+  const modeChipsHtml  = modes.map(m => `<button class="ccx-chip" data-mode="${m}">${m}</button>`).join('');
+  const dividerHtml    = modes.length && levels.length ? `<span class="ccx-divider"></span>` : '';
+  const levelChipsHtml = levels.map(l => `<button class="ccx-chip" data-level="${l}">Level ${l}</button>`).join('');
+
   el.innerHTML = `
     <div class="carousel-stage">
       <div class="carousel-map-bg" id="cc-map"></div>
       <div class="carousel-overlay">
-        <div class="carousel-header-bar">
-          <button class="carousel-back-btn" aria-label="Back to chat">
+        <div class="ccx-head">
+          <button class="ccx-back" aria-label="Back">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <polyline points="15 18 9 12 15 6"/>
             </svg>
-            <span>${headerLabel}</span>
+          </button>
+          <div class="ccx-title-block">
+            <span class="ccx-count"><b>${sorted.length}</b> courses</span>
+            <span class="ccx-sub" id="ccx-sub">${subText(sorted.length)}</span>
+          </div>
+          <button class="ccx-finn" aria-label="Back to Finn">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
           </button>
         </div>
+        ${showRefine ? `<div class="ccx-refine">${modeChipsHtml}${dividerHtml}${levelChipsHtml}</div>` : ''}
         <div class="carousel-cards-zone">
-          <div class="carousel-track" role="listbox" aria-label="Courses"></div>
-          <div class="carousel-dots" aria-hidden="true"></div>
+          <div class="carousel-track" id="cc-track" role="listbox" aria-label="Courses"></div>
+          <div class="carousel-dots" id="cc-dots" aria-hidden="true"></div>
         </div>
       </div>
     </div>`;
 
-  el.querySelector('.carousel-back-btn').addEventListener('click', () => go('chat-first'));
+  el.querySelector('.ccx-back').addEventListener('click', () => go(backRoute));
+  el.querySelector('.ccx-finn').addEventListener('click', () => go('chat-first'));
 
-  const track  = el.querySelector('.carousel-track');
-  const dotsEl = el.querySelector('.carousel-dots');
+  const track  = el.querySelector('#cc-track');
+  const dotsEl = el.querySelector('#cc-dots');
+  const subEl  = el.querySelector('#ccx-sub');
 
-  // ── Build cards ────────────────────────────────────────────────────────────
-  courses.forEach((course, idx) => {
-    const { title, specialism } = splitTitle(course.course_title);
-    const colour  = subjectColour(course.ssa_code);
-    const mode    = modeLabel(course.mode);
-    const lvlText = course.level != null ? `L${course.level}` : null;
-    const hook    = (course.preview_text || '').slice(0, 200);
+  // ── State shared across buildCards calls ──────────────────────────────────
+  let cardEls      = [];
+  let dotEls       = [];
+  let currentIdx   = 0;
+  let activeCourses = sorted;
+  let currentPin   = null;
 
-    const chipsHtml = [
-      course.qual_type
-        ? `<span class="cc-chip">${course.qual_type}</span>`
-        : '',
-      mode
-        ? `<span class="cc-chip cc-chip--mode">
-             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
-               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-             </svg>${mode}</span>`
-        : '',
-    ].filter(Boolean).join('');
-
-    const card = document.createElement('div');
-    card.className = `carousel-card${idx === 0 ? ' is-active' : ''}`;
-    card.setAttribute('role', 'option');
-    card.setAttribute('aria-selected', idx === 0 ? 'true' : 'false');
-    card.tabIndex = idx === 0 ? 0 : -1;
-
-    card.innerHTML = `
-      <div class="cc-header" style="background:${colour}">
-        <div class="cc-watermark">${WATERMARK_SVG}</div>
-        ${lvlText
-          ? `<span class="cc-level-badge">${lvlText}</span>`
-          : `<span class="cc-level-badge cc-level-badge--empty" aria-hidden="true"></span>`}
-        <div class="cc-title-block">
-          <h2 class="cc-title">${title}</h2>
-          ${specialism ? `<p class="cc-specialism">${specialism}</p>` : ''}
-        </div>
-      </div>
-      <div class="cc-body">
-        <div class="cc-chips">${chipsHtml}</div>
-        <p class="cc-hook">${hook}</p>
-        <div class="cc-footer">
-          <span class="cc-provider">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-            </svg>
-            ${course.provider_name || ''}
-          </span>
-          ${course.duration ? `<span class="cc-duration">${course.duration}</span>` : ''}
-        </div>
-      </div>`;
-
-    logEvent('course_impression', 'course', course.course_id, course.course_title);
-
-    card.addEventListener('click', () => {
-      // Suppress navigation if the pointer just finished a drag
-      if (_dragDelta > 6) { _dragDelta = 0; return; }
-      if (card.classList.contains('is-active')) {
-        logEvent('course_tap', 'course', course.course_id, course.course_title);
-        go('course-detail', {
-          courseId:    course.course_id,
-          courseTitle: course.course_title,
-          backRoute:   'course-list',
-        });
-      } else {
-        smoothScrollTo(card.offsetLeft + card.offsetWidth / 2 - track.clientWidth / 2);
-      }
-    });
-
-    track.appendChild(card);
-
-    // Dot indicator
-    const dot = document.createElement('span');
-    dot.className = `carousel-dot${idx === 0 ? ' is-active' : ''}`;
-    dotsEl.appendChild(dot);
-  });
-
-  // ── Programmatic smooth scroll (rAF, works cross-browser on horizontal axis) ─
   let _scrollAnimId = null;
+  let _dragStart    = null;
+  let _dragLeft     = 0;
+  let _dragDelta    = 0;
 
+  // ── Smooth scroll ─────────────────────────────────────────────────────────
   function smoothScrollTo(targetX, duration = 300) {
     if (_scrollAnimId) { cancelAnimationFrame(_scrollAnimId); _scrollAnimId = null; }
     const startX = track.scrollLeft;
@@ -217,48 +179,157 @@ export function CourseCarouselView(slices = {}) {
     const t0 = performance.now();
     function step(t) {
       const p = Math.min((t - t0) / duration, 1);
-      const e = 1 - (1 - p) ** 3; // cubic ease-out
+      const e = 1 - (1 - p) ** 3;
       track.scrollLeft = startX + delta * e;
       _scrollAnimId = p < 1 ? requestAnimationFrame(step) : null;
     }
     _scrollAnimId = requestAnimationFrame(step);
   }
 
-  // ── Active-card tracking ───────────────────────────────────────────────────
-  const cardEls = Array.from(track.querySelectorAll('.carousel-card'));
-  const dotEls  = Array.from(dotsEl.querySelectorAll('.carousel-dot'));
-  let   currentIdx = 0;
-  let   currentPin = null;
-
+  // ── Single active pin ─────────────────────────────────────────────────────
   function setActivePin(course) {
-    if (!_activeMap || course.lat == null || course.lng == null) return;
+    if (!_activeMap || !course || course.lat == null || course.lng == null) return;
     setTimeout(() => {
       if (currentPin) currentPin.remove();
-      currentPin = L.marker([course.lat, course.lng], {
-        icon: makePin(subjectColour(course.ssa_code)),
-      }).addTo(_activeMap);
-      _activeMap.panTo([course.lat, course.lng], {
-        animate:       true,
-        duration:      0.65,
-        easeLinearity: 0.5,
-      });
+      currentPin = L.marker([course.lat, course.lng], { icon: makePin(course.ssa_code) }).addTo(_activeMap);
+      _activeMap.panTo([course.lat, course.lng], { animate: true, duration: 0.65, easeLinearity: 0.5 });
     }, 90);
   }
 
-  function updateActive(idx, force = false) {
-    if (idx === currentIdx && !force) return;
+  // ── Active card tracking ──────────────────────────────────────────────────
+  function updateActive(idx) {
+    if (idx === currentIdx && cardEls[idx]?.classList.contains('is-active')) return;
     currentIdx = idx;
     cardEls.forEach((c, i) => {
-      const active = i === idx;
-      c.classList.toggle('is-active', active);
-      c.setAttribute('aria-selected', active ? 'true' : 'false');
-      c.tabIndex = active ? 0 : -1;
+      const on = i === idx;
+      c.classList.toggle('is-active', on);
+      c.setAttribute('aria-selected', on ? 'true' : 'false');
+      c.tabIndex = on ? 0 : -1;
     });
     dotEls.forEach((d, i) => d.classList.toggle('is-active', i === idx));
-    setActivePin(courses[idx]);
+    setActivePin(activeCourses[idx]);
   }
 
-  // ── Scroll listener — updates active card after native or JS-driven scroll ─
+  // ── Card builder ──────────────────────────────────────────────────────────
+  function buildCards(courseSet) {
+    activeCourses = courseSet;
+    track.innerHTML = '';
+    dotsEl.innerHTML = '';
+    cardEls = [];
+    dotEls  = [];
+    currentIdx = 0;
+
+    courseSet.forEach((course, idx) => {
+      const s        = subject(course.ssa_code);
+      const raw      = course.course_title || '';
+      const { title, specialism } = splitTitle(raw);
+      const lvlQual  = course.qual_type || (course.level != null ? `L${course.level}` : '');
+      const provider = course.campus_name || course.provider_name || '';
+      const hook     = (course.preview_text || '').slice(0, 160);
+      const distHtml = (hasLoc && course._distMi != null)
+        ? `<span class="dist">${course._distMi.toFixed(1)} mi</span>` : '';
+
+      const chipsHtml = [
+        course.qual_type       ? `<span>${course.qual_type}</span>`       : '',
+        modeLabel(course.mode) ? `<span>${modeLabel(course.mode)}</span>` : '',
+        distHtml,
+      ].filter(Boolean).join('');
+
+      // Outer wrapper: drives scroll-snap and inactive dimming
+      const wrap = document.createElement('div');
+      wrap.className = `carousel-card${idx === 0 ? ' is-active' : ''}`;
+      wrap.setAttribute('role', 'option');
+      wrap.setAttribute('aria-selected', idx === 0 ? 'true' : 'false');
+      wrap.tabIndex = idx === 0 ? 0 : -1;
+
+      // Inner card: shared .ck.ck-course identity (matches chat compact card)
+      const card = document.createElement('div');
+      card.className = 'ck ck-course';
+      card.style.setProperty('--sub', s.colour);
+      card.innerHTML = `
+        <div class="cc-top">
+          <span class="wm">${subjectIconSvg(course.ssa_code)}</span>
+          ${lvlQual ? `<span class="lvl">${lvlQual}</span>` : ''}
+          <div class="cc-tt">
+            <b>${title}</b>
+            <span>${provider || specialism || ''}</span>
+          </div>
+        </div>
+        <div class="cc-bd">
+          ${chipsHtml ? `<div class="cc-chips">${chipsHtml}</div>` : ''}
+          ${hook       ? `<p class="cc-hook">${hook}</p>`          : ''}
+        </div>`;
+
+      // Bookmark button in card body — stopPropagation prevents card-tap navigation
+      card.querySelector('.cc-bd').appendChild(bookmarkButton({
+        id:       course.course_id,
+        type:     'course',
+        title:    raw,
+        ssa:      course.ssa_code,
+        subtitle: [course.qual_type, provider].filter(Boolean).join(' · '),
+      }));
+
+      wrap.appendChild(card);
+      track.appendChild(wrap);
+      cardEls.push(wrap);
+
+      logEvent('course_impression', 'course', course.course_id, raw);
+
+      wrap.addEventListener('click', () => {
+        if (_dragDelta > 6) { _dragDelta = 0; return; }
+        if (wrap.classList.contains('is-active')) {
+          logEvent('course_tap', 'course', course.course_id, raw);
+          go('course-detail', { courseId: course.course_id, courseTitle: raw, backRoute: 'course-list' });
+        } else {
+          smoothScrollTo(wrap.offsetLeft + wrap.offsetWidth / 2 - track.clientWidth / 2);
+        }
+      });
+
+      const dot = document.createElement('span');
+      dot.className = `carousel-dot${idx === 0 ? ' is-active' : ''}`;
+      dotsEl.appendChild(dot);
+      dotEls.push(dot);
+    });
+
+    setActivePin(courseSet[0]);
+  }
+
+  // ── Refine ────────────────────────────────────────────────────────────────
+  let modeFilter  = null;
+  let levelFilter = null;
+
+  el.querySelectorAll('.ccx-chip[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modeFilter = modeFilter === btn.dataset.mode ? null : btn.dataset.mode;
+      el.querySelectorAll('.ccx-chip[data-mode]').forEach(b =>
+        b.classList.toggle('on', b.dataset.mode === modeFilter));
+      applyRefine();
+    });
+  });
+
+  el.querySelectorAll('.ccx-chip[data-level]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const l = Number(btn.dataset.level);
+      levelFilter = levelFilter === l ? null : l;
+      el.querySelectorAll('.ccx-chip[data-level]').forEach(b =>
+        b.classList.toggle('on', Number(b.dataset.level) === levelFilter));
+      applyRefine();
+    });
+  });
+
+  function applyRefine() {
+    const filtered = sorted.filter(c => {
+      if (modeFilter  && modeLabel(c.mode) !== modeFilter) return false;
+      if (levelFilter && c.level !== levelFilter) return false;
+      return true;
+    });
+    const set = filtered.length ? filtered : sorted;
+    if (subEl) subEl.textContent = subText(set.length);
+    buildCards(set);
+    track.scrollLeft = 0;
+  }
+
+  // ── Scroll listener ───────────────────────────────────────────────────────
   let scrollRaf = null;
   track.addEventListener('scroll', () => {
     if (scrollRaf) cancelAnimationFrame(scrollRaf);
@@ -273,15 +344,9 @@ export function CourseCarouselView(slices = {}) {
     });
   }, { passive: true });
 
-  // ── Mouse drag — lets desktop users drag the carousel ─────────────────────
-  // (Touch uses native CSS scroll-snap; this only activates for mouse pointers.)
-  let _dragStart  = null;
-  let _dragLeft   = 0;
-  let _dragDelta  = 0;
-
+  // ── Mouse drag ────────────────────────────────────────────────────────────
   track.addEventListener('pointerdown', e => {
     if (e.pointerType !== 'mouse') return;
-    // Cancel any in-flight animation so drag takes over immediately
     if (_scrollAnimId) { cancelAnimationFrame(_scrollAnimId); _scrollAnimId = null; }
     _dragStart = e.clientX;
     _dragLeft  = track.scrollLeft;
@@ -291,41 +356,39 @@ export function CourseCarouselView(slices = {}) {
 
   track.addEventListener('pointermove', e => {
     if (_dragStart === null || e.pointerType !== 'mouse') return;
-    const dx = _dragStart - e.clientX;
-    _dragDelta = Math.abs(dx);
-    track.scrollLeft = _dragLeft + dx;
+    _dragDelta = Math.abs(_dragStart - e.clientX);
+    track.scrollLeft = _dragLeft + (_dragStart - e.clientX);
   });
 
   function endDrag() {
     if (_dragStart === null) return;
     _dragStart = null;
     track.style.cursor = '';
-
-    // Smooth-snap to nearest card (scroll-snap alone doesn't animate on mouse release)
     const cx = track.scrollLeft + track.clientWidth / 2;
     let nearest = 0, minDist = Infinity;
     cardEls.forEach((c, i) => {
       const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - cx);
       if (d < minDist) { minDist = d; nearest = i; }
     });
-    const target = cardEls[nearest];
-    smoothScrollTo(target.offsetLeft + target.offsetWidth / 2 - track.clientWidth / 2);
+    smoothScrollTo(cardEls[nearest].offsetLeft + cardEls[nearest].offsetWidth / 2 - track.clientWidth / 2);
   }
 
   track.addEventListener('pointerup',     endDrag);
   track.addEventListener('pointercancel', endDrag);
-  // Catch releases outside the track so _dragStart is always cleared
   window.addEventListener('pointerup',     endDrag);
   window.addEventListener('pointercancel', endDrag);
 
-  // ── Leaflet map initialisation ─────────────────────────────────────────────
+  // ── Initial card render ───────────────────────────────────────────────────
+  buildCards(sorted);
+
+  // ── Leaflet map ───────────────────────────────────────────────────────────
   requestAnimationFrame(() => {
     const mapEl = el.querySelector('#cc-map');
     if (!mapEl || typeof L === 'undefined') return;
 
-    const first = courses[0];
-    const initLat = first.lat ?? 53.5;
-    const initLng = first.lng ?? -2.3;
+    const first   = sorted[0];
+    const initLat = first?.lat ?? 53.5;
+    const initLng = first?.lng ?? -2.3;
 
     _activeMap = L.map(mapEl, {
       center:             [initLat, initLng],
@@ -344,19 +407,14 @@ export function CourseCarouselView(slices = {}) {
     L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
       {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>' +
+                     ' &copy; <a href="https://carto.com/attributions">CARTO</a>',
         maxZoom: 19,
       }
     ).addTo(_activeMap);
 
-    if (first.lat != null && first.lng != null) {
-      currentPin = L.marker([first.lat, first.lng], {
-        icon: makePin(subjectColour(first.ssa_code)),
-      }).addTo(_activeMap);
-    }
-
+    // Map is now ready — place the first pin (setActivePin deferred silently during buildCards)
+    setActivePin(activeCourses[currentIdx]);
     setTimeout(() => _activeMap?.invalidateSize(), 60);
   });
-
-  return el;
 }
