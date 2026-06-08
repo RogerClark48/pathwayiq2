@@ -224,7 +224,7 @@ function renderFull(el, courses, userLoc, backRoute) {
       const raw      = course.course_title || '';
       const { title, specialism } = splitTitle(raw);
       const lvlQual  = course.qual_type || (course.level != null ? `L${course.level}` : '');
-      const provider = course.campus_name || course.provider_name || '';
+      const provider = [course.provider_name, course.campus_name].filter(Boolean).join(' · ');
       const hook     = (course.preview_text || '').slice(0, 160);
       const distHtml = (hasLoc && course._distMi != null)
         ? `<span class="dist">${course._distMi.toFixed(1)} mi</span>` : '';

@@ -292,6 +292,14 @@ informs Haiku's selection but is not a restriction request).
 value). Examples: [QUAL:Apprenticeship], [QUAL:T Level], [QUAL:HNC], [QUAL:HND],
 [QUAL:Degree Apprenticeship]. **[QUAL:ALL]** — Clear qual filter.
 
+**[PROVIDER:X]** — User mentions a specific provider or campus location as a
+preference or constraint (e.g. "Wigan and Leigh is near me", "I want to study in
+Salford", "I can get to Bury easily"). Use the provider name or a clear fragment —
+the system will match it. Known providers: {", ".join(PROVIDERS.keys())}.
+**[PROVIDER:ALL]** — Clear provider filter. Do NOT tell the user you cannot filter
+by location — you can filter by provider. Do not use this for vague location
+mentions; only when the user names or clearly implies a specific provider.
+
 Active filters are shown in your context note. When filters are active and
 results are being shown, briefly acknowledge them so the user stays informed:
 e.g. "I'm showing Level 4 courses — want me to broaden that?"
@@ -540,14 +548,30 @@ def get_welcome_session(session_id: str) -> dict:
                 "created_at":           now,
                 "last_used_at":         now,
                 "filters": {
-                    "level": None,  # int (RQF 3–7) or None
-                    "mode":  None,  # "PT", "FT", or None
-                    "qual":  None,  # qual_type string or None
+                    "level":    None,  # int (RQF 3–7) or None
+                    "mode":     None,  # "PT", "FT", or None
+                    "qual":     None,  # qual_type string or None
+                    "provider": None,  # canonical provider_name string or None
                 },
             }
         else:
             _welcome_sessions[session_id]["last_used_at"] = now
         return _welcome_sessions[session_id]
+
+
+def resolve_provider(fragment: str) -> str | None:
+    """Match a free-text fragment to a canonical provider_name using substring matching.
+    Normalises & vs and so 'Wigan and Leigh' matches 'Wigan & Leigh College'."""
+    if not fragment:
+        return None
+    def norm(s: str) -> str:
+        return s.lower().replace('&', 'and').replace('  ', ' ')
+    f = norm(fragment)
+    for name in PROVIDERS:
+        n = norm(name)
+        if f in n or n in f:
+            return name
+    return None
 
 
 def level_range(n: int) -> tuple[int, int]:
@@ -568,6 +592,8 @@ def build_chroma_where(filters: dict) -> dict | None:
         clauses.append({"mode": {"$in": ["FT", "FT/PT"]}})
     if filters.get("qual"):
         clauses.append({"qual_type": {"$eq": filters["qual"]}})
+    if filters.get("provider"):
+        clauses.append({"provider": {"$eq": filters["provider"]}})
     if not clauses:
         return None
     return clauses[0] if len(clauses) == 1 else {"$and": clauses}
@@ -583,6 +609,8 @@ def active_filter_summary(filters: dict) -> str:
         parts.append("Part-time" if filters["mode"] == "PT" else "Full-time")
     if filters.get("qual"):
         parts.append(filters["qual"])
+    if filters.get("provider"):
+        parts.append(filters["provider"])
     return ", ".join(parts) if parts else ""
 
 
@@ -666,6 +694,7 @@ def welcome_chat_llm(session_id: str, message: str, saved_items: list | None = N
     level_match       = re.search(r'\[LEVEL:(\d+|ALL)\]', raw_text, re.IGNORECASE)
     mode_match        = re.search(r'\[MODE:(PT|FT|ALL)\]', raw_text, re.IGNORECASE)
     qual_match        = re.search(r'\[QUAL:([^\]]+)\]', raw_text, re.IGNORECASE)
+    provider_match    = re.search(r'\[PROVIDER:([^\]]+)\]', raw_text, re.IGNORECASE)
 
     filter_code   = int(filter_match.group(1)) if filter_match else None
     suggestions   = [s.strip() for s in suggestions_match.group(1).split('|') if s.strip()] if suggestions_match else []
@@ -677,6 +706,7 @@ def welcome_chat_llm(session_id: str, message: str, saved_items: list | None = N
     bot_response  = re.sub(r'\[LEVEL:[^\]]+\]', '', bot_response, flags=re.IGNORECASE)
     bot_response  = re.sub(r'\[MODE:[^\]]+\]', '', bot_response, flags=re.IGNORECASE)
     bot_response  = re.sub(r'\[QUAL:[^\]]+\]', '', bot_response, flags=re.IGNORECASE)
+    bot_response  = re.sub(r'\[PROVIDER:[^\]]+\]', '', bot_response, flags=re.IGNORECASE)
     bot_response  = bot_response.replace("[PIVOT_TO_COURSES]", "").replace("[SHOW_QUAL_MAP]", "").strip()
 
     with _welcome_sessions_lock:
@@ -692,6 +722,9 @@ def welcome_chat_llm(session_id: str, message: str, saved_items: list | None = N
         if qual_match:
             val = qual_match.group(1).strip()
             f["qual"] = None if val.upper() == "ALL" else val
+        if provider_match:
+            val = provider_match.group(1).strip()
+            f["provider"] = None if val.upper() == "ALL" else resolve_provider(val)
 
     print(f"[welcome_chat] pivot={pivot} filter_code={filter_code} suggestions={suggestions} "
           f"filters={sess['filters']} response={bot_response[:80]!r}", flush=True)
@@ -943,6 +976,7 @@ _CHAT_TOOL = {
 _providers_text = "\n".join(
     f"{name} — {location}" for name, location in PROVIDERS.items()
 )
+_providers_text_oneline = ", ".join(PROVIDERS.keys())
 
 
 _EXPLAIN_SYSTEM = (
@@ -3256,6 +3290,9 @@ def get_filtered_courses(ssa_code: int, filters: dict | None = None) -> dict:
         if filters.get("qual"):
             sql += " AND qual_type = ?"
             params.append(filters["qual"])
+        if filters.get("provider"):
+            sql += " AND provider_id = (SELECT provider_id FROM providers WHERE provider_name = ?)"
+            params.append(filters["provider"])
         sql += " ORDER BY course_title"
         rows  = conn.execute(sql, params).fetchall()
         provider_ids = list({r["provider_id"] for r in rows})

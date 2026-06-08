@@ -137,7 +137,7 @@ function makeCourseCard(course) {
   const rawTitle = course.course_title || course.title || '';
   const { title, specialism } = splitTitle(rawTitle);
   const lvlQual  = course.qual_type || (course.level != null ? `L${course.level}` : '');
-  const provider = course.campus_name || course.provider_name || course.provider || '';
+  const provider = [course.provider_name || course.provider, course.campus_name].filter(Boolean).join(' · ');
 
   const chipsHtml = [
     course.qual_type          ? `<span>${course.qual_type}</span>`           : '',
