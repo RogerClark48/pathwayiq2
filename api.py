@@ -265,6 +265,39 @@ immediately with chips for those options.
 
 Do not use [SUGGESTIONS:...] with [PIVOT_TO_COURSES] or [FILTER:N].
 
+## Search filters
+
+As the conversation progresses you may detect that the user wants to restrict
+results. Signal these with filter markers — they are stripped before display
+and stored server-side. Emit them alongside [PIVOT_TO_COURSES] or [FILTER:N].
+
+**[LEVEL:N]** — Set level filter. Emit only when the user explicitly requests
+a level or names a specific qualification type:
+- "level 4" / "HNC" / "Higher Apprenticeship" → [LEVEL:4]
+- "level 5" / "HND" / "Foundation Degree" → [LEVEL:5]
+- "degree" / "level 6" / "Degree Apprenticeship" → [LEVEL:6]
+- "master's" / "postgraduate" / "level 7" → [LEVEL:7]
+- "T Level" / "level 3" → [LEVEL:3]
+Do NOT emit from background statements ("I've just finished my A-levels" — that
+informs Haiku's selection but is not a restriction request).
+
+**[LEVEL:ALL]** — Clear the level filter when the user explicitly broadens:
+"any level", "show me everything", "don't filter by level", "all levels".
+
+**[MODE:PT]** — User wants part-time courses: "part-time", "I need to keep working",
+"evenings or weekends". **[MODE:FT]** — User wants full-time courses.
+**[MODE:ALL]** — Clear mode filter.
+
+**[QUAL:X]** — User wants a specific qualification type (use the exact qual_type
+value). Examples: [QUAL:Apprenticeship], [QUAL:T Level], [QUAL:HNC], [QUAL:HND],
+[QUAL:Degree Apprenticeship]. **[QUAL:ALL]** — Clear qual filter.
+
+Active filters are shown in your context note. When filters are active and
+results are being shown, briefly acknowledge them so the user stays informed:
+e.g. "I'm showing Level 4 courses — want me to broaden that?"
+Never acknowledge a filter you have just set in the same turn (it would be
+redundant). Only surface it on the next turn if results are constrained.
+
 ## What not to do
 
 - Do not ask the user's name, age, or location.
@@ -501,15 +534,56 @@ def get_welcome_session(session_id: str) -> dict:
         now = time.time()
         if session_id not in _welcome_sessions:
             _welcome_sessions[session_id] = {
-                "messages":           [],
+                "messages":             [],
                 "interview_turn_count": 0,
-                "pivot_done":         False,
-                "created_at":         now,
-                "last_used_at":       now,
+                "pivot_done":           False,
+                "created_at":           now,
+                "last_used_at":         now,
+                "filters": {
+                    "level": None,  # int (RQF 3–7) or None
+                    "mode":  None,  # "PT", "FT", or None
+                    "qual":  None,  # qual_type string or None
+                },
             }
         else:
             _welcome_sessions[session_id]["last_used_at"] = now
         return _welcome_sessions[session_id]
+
+
+def level_range(n: int) -> tuple[int, int]:
+    """Return (lo, hi) Chroma/SQL level range for a stated level centre."""
+    return (max(2, n - 1), min(7, n + 1))
+
+
+def build_chroma_where(filters: dict) -> dict | None:
+    """Build a Chroma where= clause from active session filters. Returns None if no filters."""
+    clauses = []
+    if filters.get("level"):
+        lo, hi = level_range(filters["level"])
+        clauses.append({"level": {"$gte": lo}})
+        clauses.append({"level": {"$lte": hi}})
+    if filters.get("mode") == "PT":
+        clauses.append({"mode": {"$in": ["PT", "FT/PT"]}})
+    elif filters.get("mode") == "FT":
+        clauses.append({"mode": {"$in": ["FT", "FT/PT"]}})
+    if filters.get("qual"):
+        clauses.append({"qual_type": {"$eq": filters["qual"]}})
+    if not clauses:
+        return None
+    return clauses[0] if len(clauses) == 1 else {"$and": clauses}
+
+
+def active_filter_summary(filters: dict) -> str:
+    """Human-readable summary of active filters for dynamic_note and logging."""
+    parts = []
+    if filters.get("level"):
+        lo, hi = level_range(filters["level"])
+        parts.append(f"Level {lo}–{hi}")
+    if filters.get("mode"):
+        parts.append("Part-time" if filters["mode"] == "PT" else "Full-time")
+    if filters.get("qual"):
+        parts.append(filters["qual"])
+    return ", ".join(parts) if parts else ""
 
 
 def cleanup_welcome_sessions() -> None:
@@ -546,13 +620,21 @@ def welcome_chat_llm(session_id: str, message: str, saved_items: list | None = N
     print(f"[welcome_chat] session={session_id[:8]}... turn={sess['interview_turn_count']+1} "
           f"msg={message!r} saved={len(saved_items)}", flush=True)
 
+    filter_summary = active_filter_summary(sess.get("filters") or {})
+    filter_note    = f"\nActive search filters: {filter_summary}." if filter_summary else "\nNo active search filters."
+
     if sess.get("pivot_done"):
-        dynamic_note = "\n\n[Courses have been shown. You are now in advisory mode — see ## Post-pivot advisory mode in your instructions. You may still use [FILTER:N] and [PIVOT_TO_COURSES] markers if the user asks to see courses.]" + saved_note
+        dynamic_note = (
+            "\n\n[Courses have been shown. You are now in advisory mode — see "
+            "## Post-pivot advisory mode in your instructions. You may still use "
+            "[FILTER:N] and [PIVOT_TO_COURSES] markers if the user asks to see courses.]"
+            + filter_note + saved_note
+        )
     else:
         dynamic_note = (
             f"\n\n[This is interview turn {sess['interview_turn_count'] + 1}. "
             f"At turn 4 or beyond with no usable input, use the graceful exit.]"
-            + saved_note
+            + filter_note + saved_note
         )
     try:
         resp = _anthropic_post({
@@ -581,19 +663,38 @@ def welcome_chat_llm(session_id: str, message: str, saved_items: list | None = N
 
     filter_match      = re.search(r'\[FILTER:(\d+)\]', raw_text)
     suggestions_match = re.search(r'\[SUGGESTIONS:([^\]]+)\]', raw_text)
+    level_match       = re.search(r'\[LEVEL:(\d+|ALL)\]', raw_text, re.IGNORECASE)
+    mode_match        = re.search(r'\[MODE:(PT|FT|ALL)\]', raw_text, re.IGNORECASE)
+    qual_match        = re.search(r'\[QUAL:([^\]]+)\]', raw_text, re.IGNORECASE)
+
     filter_code   = int(filter_match.group(1)) if filter_match else None
     suggestions   = [s.strip() for s in suggestions_match.group(1).split('|') if s.strip()] if suggestions_match else []
     pivot         = "[PIVOT_TO_COURSES]" in raw_text
     show_qual_map = "[SHOW_QUAL_MAP]" in raw_text
+
     bot_response  = re.sub(r'\[FILTER:\d+\]', '', raw_text)
     bot_response  = re.sub(r'\[SUGGESTIONS:[^\]]+\]', '', bot_response)
+    bot_response  = re.sub(r'\[LEVEL:[^\]]+\]', '', bot_response, flags=re.IGNORECASE)
+    bot_response  = re.sub(r'\[MODE:[^\]]+\]', '', bot_response, flags=re.IGNORECASE)
+    bot_response  = re.sub(r'\[QUAL:[^\]]+\]', '', bot_response, flags=re.IGNORECASE)
     bot_response  = bot_response.replace("[PIVOT_TO_COURSES]", "").replace("[SHOW_QUAL_MAP]", "").strip()
 
     with _welcome_sessions_lock:
         sess["messages"].append({"role": "assistant", "content": bot_response})
         sess["interview_turn_count"] += 1
+        f = sess["filters"]
+        if level_match:
+            val = level_match.group(1).upper()
+            f["level"] = None if val == "ALL" else int(val)
+        if mode_match:
+            val = mode_match.group(1).upper()
+            f["mode"] = None if val == "ALL" else val
+        if qual_match:
+            val = qual_match.group(1).strip()
+            f["qual"] = None if val.upper() == "ALL" else val
 
-    print(f"[welcome_chat] pivot={pivot} filter_code={filter_code} suggestions={suggestions} show_qual_map={show_qual_map} response={bot_response[:80]!r}", flush=True)
+    print(f"[welcome_chat] pivot={pivot} filter_code={filter_code} suggestions={suggestions} "
+          f"filters={sess['filters']} response={bot_response[:80]!r}", flush=True)
     return {"bot_response": bot_response, "pivot_to_courses": pivot, "filter_code": filter_code, "suggestions": suggestions, "show_qual_map": show_qual_map}
 
 
@@ -3136,24 +3237,37 @@ def get_sample_courses() -> dict:
     }
 
 
-def get_filtered_courses(ssa_code: int) -> dict:
-    """All active courses for a given SSA code, sorted by title."""
+def get_filtered_courses(ssa_code: int, filters: dict | None = None) -> dict:
+    """All active courses for a given SSA code, with optional level/mode/qual filters."""
+    filters = filters or {}
     try:
-        conn = sqlite3.connect(FUTUREFINDER_DB)
+        conn   = sqlite3.connect(FUTUREFINDER_DB)
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            f"SELECT {_COURSE_CARD_FIELDS} FROM courses "
-            "WHERE ssa_code=? AND is_active=1 ORDER BY course_title",
-            (ssa_code,)
-        ).fetchall()
+        sql    = f"SELECT {_COURSE_CARD_FIELDS} FROM courses WHERE ssa_code=? AND is_active=1"
+        params: list = [ssa_code]
+        if filters.get("level"):
+            lo, hi = level_range(filters["level"])
+            sql += " AND level BETWEEN ? AND ?"
+            params += [lo, hi]
+        if filters.get("mode") == "PT":
+            sql += " AND mode IN ('PT', 'FT/PT')"
+        elif filters.get("mode") == "FT":
+            sql += " AND mode IN ('FT', 'FT/PT')"
+        if filters.get("qual"):
+            sql += " AND qual_type = ?"
+            params.append(filters["qual"])
+        sql += " ORDER BY course_title"
+        rows  = conn.execute(sql, params).fetchall()
         provider_ids = list({r["provider_id"] for r in rows})
         providers, campuses_by_provider = _load_campus_enrichment(conn, provider_ids)
         conn.close()
         courses = [_build_card_row(r, providers, campuses_by_provider) for r in rows]
     except Exception as e:
-        print(f"[filtered_courses] ssa_code={ssa_code} error: {e}", flush=True)
+        print(f"[filtered_courses] ssa_code={ssa_code} filters={filters} error: {e}", flush=True)
         return {"intro_text": "Here are the courses in that area.", "courses": []}
-    return {"intro_text": f"Here are all the courses in that subject area at {INSTITUTION_NAME}.", "courses": courses}
+    summary = active_filter_summary(filters)
+    intro   = f"Here are the {summary} courses in that area." if summary else f"Here are all the courses in that subject area at {INSTITUTION_NAME}."
+    return {"intro_text": intro, "courses": courses}
 
 
 def retrieve_courses_for_pivot(session_id: str, saved_items: list | None = None) -> dict:
@@ -3171,13 +3285,15 @@ def retrieve_courses_for_pivot(session_id: str, saved_items: list | None = None)
     sess = get_welcome_session(session_id)
     with _welcome_sessions_lock:
         messages = list(sess["messages"])
+        filters  = dict(sess.get("filters") or {})
 
     user_turns = [m["content"] for m in messages if m["role"] == "user"]
     if not user_turns:
         return _empty
 
     query_text = " ".join(user_turns)
-    print(f"[pivot_retrieval] session={session_id[:8]}... query={query_text!r}", flush=True)
+    chroma_where = build_chroma_where(filters)
+    print(f"[pivot_retrieval] session={session_id[:8]}... query={query_text!r} where={chroma_where}", flush=True)
 
     # Embed the user's stated interests
     try:
@@ -3192,11 +3308,14 @@ def retrieve_courses_for_pivot(session_id: str, saved_items: list | None = None)
 
     # Chroma — match_courses collection (one chunk per course, futurefinder IDs)
     try:
-        hits = match_courses_col.query(
-            query_embeddings=[vector],
-            n_results=25,
-            include=["metadatas", "distances", "documents"],
-        )
+        query_kwargs: dict = {
+            "query_embeddings": [vector],
+            "n_results":        25,
+            "include":          ["metadatas", "distances", "documents"],
+        }
+        if chroma_where:
+            query_kwargs["where"] = chroma_where
+        hits = match_courses_col.query(**query_kwargs)
     except Exception as e:
         print(f"[pivot_retrieval] Chroma error: {e}", flush=True)
         return _empty
@@ -3369,7 +3488,8 @@ def chat_welcome():
     pivot       = result["pivot_to_courses"]
     course_list = None
     if result.get("filter_code"):
-        course_list = get_filtered_courses(result["filter_code"])
+        sess_filters = get_welcome_session(session_id).get("filters") or {}
+        course_list  = get_filtered_courses(result["filter_code"], sess_filters)
         pivot = True
     elif pivot:
         course_list = retrieve_courses_for_pivot(session_id, saved_items)
