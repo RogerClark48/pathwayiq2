@@ -233,6 +233,12 @@ Subject area codes:
 - Business, Administration and Law → [FILTER:15]
 - Sustainability → [FILTER:99]
 
+**[FILTER:0]** — Use when the user asks to see all courses with no subject
+restriction — typically when a provider filter is already set and they want
+to browse everything at that provider. Example: "what courses are there at
+Wigan and Leigh?" → set [PROVIDER:Wigan and Leigh] and emit [FILTER:0].
+Active session filters (provider, level, mode, qual) are applied automatically.
+
 For anything more specific than a whole subject area, use [PIVOT_TO_COURSES]
 instead — e.g. "software development courses" → [PIVOT_TO_COURSES], not
 [FILTER:6].
@@ -3295,13 +3301,17 @@ def get_sample_courses(filters: dict | None = None) -> dict:
 
 
 def get_filtered_courses(ssa_code: int, filters: dict | None = None) -> dict:
-    """All active courses for a given SSA code, with optional level/mode/qual filters."""
+    """All active courses for a given SSA code (0 = no SSA restriction), with optional filters."""
     filters = filters or {}
     try:
         conn   = sqlite3.connect(FUTUREFINDER_DB)
         conn.row_factory = sqlite3.Row
-        sql    = f"SELECT {_COURSE_CARD_FIELDS} FROM courses WHERE ssa_code=? AND is_active=1"
-        params: list = [ssa_code]
+        if ssa_code == 0:
+            sql    = f"SELECT {_COURSE_CARD_FIELDS} FROM courses WHERE is_active=1"
+            params: list = []
+        else:
+            sql    = f"SELECT {_COURSE_CARD_FIELDS} FROM courses WHERE ssa_code=? AND is_active=1"
+            params: list = [ssa_code]
         if filters.get("level"):
             lo, hi = level_range(filters["level"])
             sql += " AND level BETWEEN ? AND ?"
@@ -3326,7 +3336,10 @@ def get_filtered_courses(ssa_code: int, filters: dict | None = None) -> dict:
         print(f"[filtered_courses] ssa_code={ssa_code} filters={filters} error: {e}", flush=True)
         return {"intro_text": "Here are the courses in that area.", "courses": []}
     summary = active_filter_summary(filters)
-    intro   = f"Here are the {summary} courses in that area." if summary else f"Here are all the courses in that subject area at {INSTITUTION_NAME}."
+    if ssa_code == 0:
+        intro = f"Here are all the courses available{' — ' + summary if summary else ''}."
+    else:
+        intro = f"Here are the {summary} courses in that area." if summary else f"Here are all the courses in that subject area at {INSTITUTION_NAME}."
     return {"intro_text": intro, "courses": courses}
 
 
