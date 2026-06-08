@@ -243,12 +243,14 @@ Do not use [FILTER:N] and [PIVOT_TO_COURSES] in the same response.
 levels, or how qualifications relate to each other. Do not combine with
 [PIVOT_TO_COURSES] or [FILTER:N].
 
-**[SHOW_SAMPLER]** — Use when the user wants to browse without a specific
-interest — they want to see what exists, get ideas, or can't decide where
-to start. Examples: "show me what's available", "I don't know what I want",
-"give me an overview", "just show me something", "I'm not sure yet".
-This returns one course from each subject area as a taster. Do not combine
-with [PIVOT_TO_COURSES] or [FILTER:N].
+**[SHOW_SAMPLER]** — Use ONLY when the user explicitly asks to browse or
+see a spread of what's available, with no subject interest expressed at all.
+Examples: "show me what's available", "give me an overview of everything",
+"just show me something to start". Do NOT use when the user has expressed
+any subject, work-style, or role interest — use [PIVOT_TO_COURSES] instead
+so the results are relevant. Do not use for vague responses like "I'm not
+sure" — ask a narrowing question instead. Do not combine with
+[PIVOT_TO_COURSES] or [FILTER:N].
 
 ## Suggestion chips
 
@@ -3249,8 +3251,9 @@ _COURSE_CARD_FIELDS = (
 )
 
 
-def get_sample_courses() -> dict:
-    """One random active course per SSA code — used for the 'Show me some ideas' sampler."""
+def get_sample_courses(filters: dict | None = None) -> dict:
+    """One random active course per SSA code, respecting active session filters."""
+    filters = filters or {}
     try:
         conn = sqlite3.connect(FUTUREFINDER_DB)
         conn.row_factory = sqlite3.Row
@@ -3259,11 +3262,24 @@ def get_sample_courses() -> dict:
         ).fetchall()]
         rows = []
         for code in codes:
-            row = conn.execute(
-                f"SELECT {_COURSE_CARD_FIELDS} FROM courses "
-                "WHERE ssa_code=? AND is_active=1 ORDER BY RANDOM() LIMIT 1",
-                (code,)
-            ).fetchone()
+            sql    = f"SELECT {_COURSE_CARD_FIELDS} FROM courses WHERE ssa_code=? AND is_active=1"
+            params: list = [code]
+            if filters.get("level"):
+                lo, hi = level_range(filters["level"])
+                sql += " AND level BETWEEN ? AND ?"
+                params += [lo, hi]
+            if filters.get("mode") == "PT":
+                sql += " AND mode IN ('PT', 'FT/PT')"
+            elif filters.get("mode") == "FT":
+                sql += " AND mode IN ('FT', 'FT/PT')"
+            if filters.get("qual"):
+                sql += " AND qual_type = ?"
+                params.append(filters["qual"])
+            if filters.get("provider"):
+                sql += " AND provider_id = (SELECT provider_id FROM providers WHERE provider_name = ?)"
+                params.append(filters["provider"])
+            sql += " ORDER BY RANDOM() LIMIT 1"
+            row = conn.execute(sql, params).fetchone()
             if row:
                 rows.append(row)
         provider_ids = list({r["provider_id"] for r in rows})
@@ -3273,10 +3289,9 @@ def get_sample_courses() -> dict:
     except Exception as e:
         print(f"[sample_courses] error: {e}", flush=True)
         return {"intro_text": "Here are some courses from across our subject areas.", "courses": []}
-    return {
-        "intro_text": f"Here's a taster — one course from each subject area at {INSTITUTION_NAME}.",
-        "courses": courses,
-    }
+    summary = active_filter_summary(filters)
+    intro   = f"Here's a taster across subject areas — filtered to {summary}." if summary else f"Here's a taster — one course from each subject area at {INSTITUTION_NAME}."
+    return {"intro_text": intro, "courses": courses}
 
 
 def get_filtered_courses(ssa_code: int, filters: dict | None = None) -> dict:
@@ -3520,11 +3535,12 @@ def chat_welcome():
     # Sampler shortcut — triggered by chip or by Sonnet emitting [SHOW_SAMPLER]
     # (Sonnet path handled below after LLM call; chip path kept for zero-latency response)
     if message.lower() in ("show me some course ideas", "show me some ideas"):
+        sess_filters = get_welcome_session(session_id).get("filters") or {}
         return jsonify({
             "session_id":       session_id,
             "bot_response":     f"Here's a taster of what {INSTITUTION_NAME} has to offer — one course from each subject area. See anything that appeals?",
             "pivot_to_courses": True,
-            "course_list":      get_sample_courses(),
+            "course_list":      get_sample_courses(sess_filters),
         })
 
     result = welcome_chat_llm(session_id, message, saved_items)
@@ -3534,7 +3550,8 @@ def chat_welcome():
     pivot       = result["pivot_to_courses"]
     course_list = None
     if result.get("show_sampler"):
-        course_list = get_sample_courses()
+        sess_filters = get_welcome_session(session_id).get("filters") or {}
+        course_list  = get_sample_courses(sess_filters)
         pivot = True
     elif result.get("filter_code"):
         sess_filters = get_welcome_session(session_id).get("filters") or {}
