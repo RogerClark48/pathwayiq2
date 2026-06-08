@@ -243,25 +243,32 @@ Do not use [FILTER:N] and [PIVOT_TO_COURSES] in the same response.
 levels, or how qualifications relate to each other. Do not combine with
 [PIVOT_TO_COURSES] or [FILTER:N].
 
+**[SHOW_SAMPLER]** — Use when the user wants to browse without a specific
+interest — they want to see what exists, get ideas, or can't decide where
+to start. Examples: "show me what's available", "I don't know what I want",
+"give me an overview", "just show me something", "I'm not sure yet".
+This returns one course from each subject area as a taster. Do not combine
+with [PIVOT_TO_COURSES] or [FILTER:N].
+
 ## Suggestion chips
 
-Use [SUGGESTIONS:option|option|option] (2–4 options) when offering the user
-concrete things to choose between. Each option must be a short first-person
-sentence expressing user intent — something the user could genuinely say
-(e.g. "I want something hands-on" not "hands-on work",
-"I'm interested in engineering" not "Engineering & Manufacturing").
-Aim for 5–8 words per option.
+Use [SUGGESTIONS:option|option|option] (2–4 options) whenever you are offering
+the user a concrete choice between things. Use them liberally — they reduce
+typing effort on mobile and make the conversation feel responsive.
 
-Chips must come from one of two sources only:
-1. **{INSTITUTION_NAME}'s subject areas** — use the names from the list above.
-2. **Work-style dimensions** — e.g. hands-on vs desk-based, people-facing
-   vs technical, indoors vs outdoors.
+Each option must read as something the user would naturally say — a short
+first-person phrase or question (e.g. "I want something hands-on",
+"I prefer part-time", "Tell me more about engineering"). Aim for 4–8 words.
+Never use noun fragments ("hands-on work", "Engineering & Manufacturing").
 
-The text immediately before the chips must explain or lead into the specific
-options offered — never offer chips that aren't accounted for by the preceding
-sentence. If you are offering a curated subset (e.g. the subject areas most
-relevant to what the user said), say why you chose those ones, then follow
-immediately with chips for those options.
+Good moments to use chips:
+- Offering subject areas to explore
+- Work-style or preference questions (hands-on vs desk, indoors vs outdoors)
+- Level or mode choices ("full-time", "part-time")
+- Simple yes/no or binary follow-ups ("Tell me more", "Show me something else")
+
+The text immediately before the chips must lead into or explain the options
+offered. Do not offer chips that are unaccounted for by the preceding sentence.
 
 Do not use [SUGGESTIONS:...] with [PIVOT_TO_COURSES] or [FILTER:N].
 
@@ -700,6 +707,7 @@ def welcome_chat_llm(session_id: str, message: str, saved_items: list | None = N
     suggestions   = [s.strip() for s in suggestions_match.group(1).split('|') if s.strip()] if suggestions_match else []
     pivot         = "[PIVOT_TO_COURSES]" in raw_text
     show_qual_map = "[SHOW_QUAL_MAP]" in raw_text
+    show_sampler  = "[SHOW_SAMPLER]" in raw_text
 
     bot_response  = re.sub(r'\[FILTER:\d+\]', '', raw_text)
     bot_response  = re.sub(r'\[SUGGESTIONS:[^\]]+\]', '', bot_response)
@@ -707,7 +715,7 @@ def welcome_chat_llm(session_id: str, message: str, saved_items: list | None = N
     bot_response  = re.sub(r'\[MODE:[^\]]+\]', '', bot_response, flags=re.IGNORECASE)
     bot_response  = re.sub(r'\[QUAL:[^\]]+\]', '', bot_response, flags=re.IGNORECASE)
     bot_response  = re.sub(r'\[PROVIDER:[^\]]+\]', '', bot_response, flags=re.IGNORECASE)
-    bot_response  = bot_response.replace("[PIVOT_TO_COURSES]", "").replace("[SHOW_QUAL_MAP]", "").strip()
+    bot_response  = bot_response.replace("[PIVOT_TO_COURSES]", "").replace("[SHOW_QUAL_MAP]", "").replace("[SHOW_SAMPLER]", "").strip()
 
     with _welcome_sessions_lock:
         sess["messages"].append({"role": "assistant", "content": bot_response})
@@ -726,9 +734,9 @@ def welcome_chat_llm(session_id: str, message: str, saved_items: list | None = N
             val = provider_match.group(1).strip()
             f["provider"] = None if val.upper() == "ALL" else resolve_provider(val)
 
-    print(f"[welcome_chat] pivot={pivot} filter_code={filter_code} suggestions={suggestions} "
-          f"filters={sess['filters']} response={bot_response[:80]!r}", flush=True)
-    return {"bot_response": bot_response, "pivot_to_courses": pivot, "filter_code": filter_code, "suggestions": suggestions, "show_qual_map": show_qual_map}
+    print(f"[welcome_chat] pivot={pivot} filter_code={filter_code} sampler={show_sampler} "
+          f"suggestions={suggestions} filters={sess['filters']} response={bot_response[:80]!r}", flush=True)
+    return {"bot_response": bot_response, "pivot_to_courses": pivot, "filter_code": filter_code, "suggestions": suggestions, "show_qual_map": show_qual_map, "show_sampler": show_sampler}
 
 
 # ---------------------------------------------------------------------------
@@ -3509,8 +3517,9 @@ def chat_welcome():
     if not session_id:
         return jsonify({"error": "session_id is required"}), 400
 
-    # Keyword shortcut — bypass Sonnet, return one course per SSA area
-    if message.lower() == "show me some course ideas":
+    # Sampler shortcut — triggered by chip or by Sonnet emitting [SHOW_SAMPLER]
+    # (Sonnet path handled below after LLM call; chip path kept for zero-latency response)
+    if message.lower() in ("show me some course ideas", "show me some ideas"):
         return jsonify({
             "session_id":       session_id,
             "bot_response":     f"Here's a taster of what {INSTITUTION_NAME} has to offer — one course from each subject area. See anything that appeals?",
@@ -3524,7 +3533,10 @@ def chat_welcome():
 
     pivot       = result["pivot_to_courses"]
     course_list = None
-    if result.get("filter_code"):
+    if result.get("show_sampler"):
+        course_list = get_sample_courses()
+        pivot = True
+    elif result.get("filter_code"):
         sess_filters = get_welcome_session(session_id).get("filters") or {}
         course_list  = get_filtered_courses(result["filter_code"], sess_filters)
         pivot = True
