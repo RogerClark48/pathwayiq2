@@ -2,38 +2,39 @@
 
 import { state, submitMessage, setWaiting, setCourseList, resetSession } from '../state.js';
 import { bookmarkButton } from '../bookmarks.js';
-import { splitProse } from '../dom.js';
-import { postWelcomeChat } from '../api.js';
+import { splitProse, renderField } from '../dom.js';
+import { postWelcomeChat, getWelcomeData } from '../api.js';
 import { go } from '../router.js';
 import { logEvent } from '../analytics.js';
 import { subject, subjectIconSvg } from '../subjects.js';
 
-const WELCOME_TEXT =
-  "Hi — I'm here to help you find a course at the Greater Manchester " +
-  "Institute of Technology (GMIoT), and to think about where it could lead. " +
-  "Tell me what you're interested in, or what kind of work appeals to you, " +
-  "and we'll go from there.";
+function welcomeText() {
+  const inst = getWelcomeData()?.institution || {};
+  const name = inst.full_name ? `${inst.full_name} (${inst.abbrev})` : 'GMIoT';
+  return `Hi — I'm here to help you find a course at the ${name}, and to think about where it could lead. ` +
+         "Tell me what you're interested in, or what kind of work appeals to you, and we'll go from there.";
+}
 
 const STARTER_CHIP_POOL = [
   "I like working with my hands",
   "I want a job outdoors",
-  "Something with computers",
+  "I'm interested in something with computers",
   "I want to work in the creative industries",
   "I want to change career",
   "I'm good at problem-solving",
   "I want to work in healthcare",
   "I like building and making things",
-  "Something to do with engineering",
+  "I'm interested in engineering",
   "I want a career that pays well",
   "I'm not sure what I want yet",
   "I like helping people",
   "I want to work with technology",
-  "Something hands-on, not a desk job",
+  "I want something hands-on, not a desk job",
   "I'm interested in construction",
   "I want to work in TV or media",
   "What can I do after my GCSEs?",
   "I like science and how things work",
-  "Something creative with design",
+  "I'm interested in something creative with design",
   "I want a practical, skilled trade",
   "Where could an apprenticeship take me?",
   "I want to work with my local community",
@@ -64,7 +65,7 @@ function linkify(text) {
 }
 
 function pickStarterChips() {
-  const fixed = "Show me some ideas";
+  const fixed = "Show me some course ideas";
   const pool  = STARTER_CHIP_POOL.slice();
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -94,9 +95,15 @@ function makeBubble(role, text) {
       const prose = document.createElement('div');
       prose.className = 'prose';
       paras.forEach(par => {
-        const p = document.createElement('p');
-        p.innerHTML = linkify(par);  // linkify HTML-escapes before injecting links
-        prose.appendChild(p);
+        const lines = par.split('\n').map(l => l.trim()).filter(Boolean);
+        const isList = lines.length > 1 && lines.some(l => /^[-•*]/.test(l));
+        if (isList) {
+          prose.appendChild(renderField(par));
+        } else {
+          const p = document.createElement('p');
+          p.innerHTML = linkify(par);
+          prose.appendChild(p);
+        }
       });
       bubble.appendChild(prose);
     } else {
@@ -230,7 +237,7 @@ function makeStarterChips() {
 
 export function StartChatView({ prefill, autosend } = {}) {
   if (state.chat.messages.length === 0) {
-    state.chat.messages.push({ role: 'bot', text: WELCOME_TEXT });
+    state.chat.messages.push({ role: 'bot', text: welcomeText() });
   }
 
   const savedCount = state.saved.items.length;

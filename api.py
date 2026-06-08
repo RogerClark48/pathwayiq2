@@ -19,7 +19,7 @@ print(f"[startup] All env vars: {[k for k in os.environ.keys()]}", flush=True)
 
 from institution_config import (
     INSTITUTION_NAME, INSTITUTION_FULL_NAME, INSTITUTION_REGION,
-    PROVIDERS, SSA_MAP, SUBJECT_AREAS,
+    PROVIDERS,
 )
 
 # ---------------------------------------------------------------------------
@@ -44,6 +44,28 @@ ANTHROPIC_URL      = "https://api.anthropic.com/v1/messages"
 HAIKU_MODEL        = "claude-haiku-4-5-20251001"
 SONNET_MODEL       = "claude-sonnet-4-6"
 
+# Standard DfE SSA taxonomy — codes 1–15 plus custom 99 (Sustainability).
+# Mirrors app/ssa.js SSA_LABELS. Not institution-specific; derived labels are
+# used at startup to build the subjects prompt text from live DB contents.
+SSA_LABELS = {
+    '1':  'Health & Care',
+    '2':  'Science & Maths',
+    '3':  'Agriculture & Land',
+    '4':  'Engineering & Manufacturing',
+    '5':  'Construction & Built Environment',
+    '6':  'Computing & IT',
+    '7':  'Retail & Commerce',
+    '8':  'Hospitality & Tourism',
+    '9':  'Creative & Media',
+    '10': 'History & Philosophy',
+    '11': 'Social Sciences',
+    '12': 'Languages & Culture',
+    '13': 'Education & Training',
+    '14': 'Life & Work',
+    '15': 'Business & Law',
+    '99': 'Sustainability',
+}
+
 # ---------------------------------------------------------------------------
 # Shared base — applies to every LLM call in the welcome flow.
 # Change tone, persona, or institution context here once; all calls pick it up.
@@ -51,51 +73,24 @@ SONNET_MODEL       = "claude-sonnet-4-6"
 # Build subject areas text from actual courses in DB — stays correct when
 # the course set changes or the app is deployed for a different institution.
 def _build_active_subjects() -> str:
-    """
-    For each Tier 1 area present in active courses:
-    - Single Tier 2 sub-category present → use the Tier 2 label (more specific).
-    - Multiple Tier 2 sub-categories present → use the Tier 1 label (reflects breadth).
-    """
+    """Build subject list from SSA codes present in active courses."""
     try:
-        ff   = sqlite3.connect(FUTUREFINDER_DB)
-        jobs = sqlite3.connect(JOBS_DB)
-
-        tier1_codes = [r[0] for r in ff.execute(
+        conn  = sqlite3.connect(FUTUREFINDER_DB)
+        codes = [str(r[0]) for r in conn.execute(
             "SELECT DISTINCT ssa_code FROM courses WHERE is_active=1 AND ssa_code IS NOT NULL ORDER BY ssa_code"
         ).fetchall()]
-
-        lines = []
-        for t1 in tier1_codes:
-            tier2_codes = [r[0] for r in ff.execute(
-                "SELECT DISTINCT ssa_tier2_code FROM courses "
-                "WHERE is_active=1 AND ssa_code=? AND ssa_tier2_code IS NOT NULL",
-                (t1,),
-            ).fetchall()]
-
-            if len(tier2_codes) == 1:
-                row = jobs.execute(
-                    "SELECT label FROM ssa_tier2 WHERE tier2_code=?", (tier2_codes[0],)
-                ).fetchone()
-            else:
-                row = jobs.execute(
-                    "SELECT label FROM ssa_categories WHERE ssa_code=?", (t1,)
-                ).fetchone()
-
-            if row:
-                lines.append(f"- {row[0]}")
-
-        ff.close()
-        jobs.close()
-        return "\n".join(lines) if lines else "- Engineering, Digital, Construction, Health, Arts, Business"
+        conn.close()
+        lines = [f"- {SSA_LABELS[c]}" for c in codes if c in SSA_LABELS]
+        return "\n".join(lines) if lines else "\n".join(f"- {v}" for v in SSA_LABELS.values())
     except Exception:
-        return "- Engineering, Digital, Construction, Health, Arts, Business"
+        return "\n".join(f"- {v}" for v in SSA_LABELS.values())
 
 _ACTIVE_SUBJECTS = _build_active_subjects()
 
 # ---------------------------------------------------------------------------
-_FF_BASE_SYSTEM = """\
+_FF_BASE_SYSTEM = f"""\
 You are FutureFinder, an AI assistant helping prospective students explore
-courses and careers at the Greater Manchester Institute of Technology (GMIoT).
+courses and careers at the {INSTITUTION_FULL_NAME} ({INSTITUTION_NAME}).
 
 You are talking to someone who may be:
 
@@ -104,25 +99,25 @@ You are talking to someone who may be:
 - Someone changing careers
 - Someone uncertain about what they want
 
-GMIoT offers courses from Level 3 (T Level) through Level 7 (Master's), including
+{INSTITUTION_NAME} offers courses from Level 3 (T Level) through Level 7 (Master's), including
 apprenticeships at higher levels. There are no GCSEs or A Levels on offer.
 
-GMIoT's subject areas are:
-""" + _ACTIVE_SUBJECTS + """
+{INSTITUTION_NAME}'s subject areas are:
+""" + _ACTIVE_SUBJECTS + f"""
 
 When exploring what a user wants, stay strictly within these subject areas.
 
-- If a user expresses an interest GMIoT cannot serve (e.g. agriculture, land
-  management, catering, travel and tourism), be honest: tell them GMIoT does
+- If a user expresses an interest {INSTITUTION_NAME} cannot serve (e.g. agriculture, land
+  management, catering, travel and tourism), be honest: tell them {INSTITUTION_NAME} does
   not offer courses in that area. Do not stretch to a "nearest equivalent".
   Ask about other interests or experience that might relate to one of the subjects
-  GMIoT does offer. If after a further turn the user still cannot express a relevant
+  {INSTITUTION_NAME} does offer. If after a further turn the user still cannot express a relevant
   interest, offer to show the subject areas so they can see what is available.
 - When suggesting alternatives or asking narrowing questions, only name areas
   from the list above. Never suggest subject areas not on this list (e.g. do
   not suggest languages, catering, hospitality, law as standalone areas).
 - Do not generate sub-area suggestion chips within a subject unless you are
-  certain GMIoT has courses there. When in doubt, pivot to courses and let the
+  certain {INSTITUTION_NAME} has courses there. When in doubt, pivot to courses and let the
   results speak — do not invent categories.
 
 Courses are retrieved from a database — do not invent course names or details
@@ -146,11 +141,11 @@ Do not use emojis.
 Do not promise outcomes (e.g. "this will lead to a job in…").\
 """
 
-_WELCOME_INTERVIEW_SYSTEM = _FF_BASE_SYSTEM + """
+_WELCOME_INTERVIEW_SYSTEM = _FF_BASE_SYSTEM + f"""
 
 ## Your goal
 
-Map the user's interest onto the GMIoT subject areas above, then trigger
+Map the user's interest onto the {INSTITUTION_NAME} subject areas above, then trigger
 the appropriate response. Any signal is usable — a subject, a job title, a
 work-style preference, a constraint. Pivot as soon as you have enough to act
 on. Do not hold out for richer input.
@@ -169,7 +164,7 @@ Good narrowing angles:
 
 Do NOT generate sub-category lists from your world knowledge (e.g. do not
 say "are you thinking mechanical, electrical, civil, or software?"). Those
-sub-categories may not match what GMIoT offers and will mislead the user.
+sub-categories may not match what {INSTITUTION_NAME} offers and will mislead the user.
 Let the retrieval system surface the actual courses once you have a broad
 direction.
 
@@ -188,11 +183,11 @@ narrowing question with a concrete example or two.
 often works: "Anything you'd rather not do? Sit at a desk, work outdoors
 in all weathers, deal with the public?"
 
-**Turn 3:** Offer to browse: "Want me to show you what GMIoT has across
+**Turn 3:** Offer to browse: "Want me to show you what {INSTITUTION_NAME} has across
 all its subject areas? You can see what's there and go from there."
 
 **Turn 4:** Suggest an advisor: "Sometimes it's easier to talk this
-through with someone. GMIoT advisors can help you figure out where to
+through with someone. {INSTITUTION_NAME} advisors can help you figure out where to
 start — [book a free course chat](https://gmiot.ac.uk/book-your-course-chat/)."
 
 Abandon the escalation the moment the user gives you something to work with.
@@ -251,10 +246,14 @@ levels, or how qualifications relate to each other. Do not combine with
 ## Suggestion chips
 
 Use [SUGGESTIONS:option|option|option] (2–4 options) when offering the user
-concrete things to choose between. Keep each option short (3–5 words).
+concrete things to choose between. Each option must be a short first-person
+sentence expressing user intent — something the user could genuinely say
+(e.g. "I want something hands-on" not "hands-on work",
+"I'm interested in engineering" not "Engineering & Manufacturing").
+Aim for 5–8 words per option.
 
 Chips must come from one of two sources only:
-1. **GMIoT's subject areas** — use the names from the list above.
+1. **{INSTITUTION_NAME}'s subject areas** — use the names from the list above.
 2. **Work-style dimensions** — e.g. hands-on vs desk-based, people-facing
    vs technical, indoors vs outdoors.
 
@@ -325,8 +324,6 @@ PROGRESSION_SYSTEM_PROMPT = (
     "You must respond with valid JSON only. "
     "Do not use markdown code blocks, backticks, or any text outside the JSON object itself."
 )
-
-# SSA_MAP imported from institution_config
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -845,9 +842,7 @@ _CHAT_TOOL = {
 _providers_text = "\n".join(
     f"{name} — {location}" for name, location in PROVIDERS.items()
 )
-_subjects_text = "\n".join(
-    f"{label} — {desc}" for label, desc in SUBJECT_AREAS
-)
+
 
 _EXPLAIN_SYSTEM = (
     f"You are a course and career guidance advisor for {INSTITUTION_FULL_NAME}. "
@@ -889,7 +884,7 @@ _EXPLAIN_SYSTEM = (
     f"{_providers_text}\n\n"
 
     "SUBJECT AREAS COVERED:\n"
-    f"{_subjects_text}\n\n"
+    f"{_ACTIVE_SUBJECTS}\n\n"
 
     "JOB DATA SOURCES:\n"
     "NCS — National Careers Service; UK government careers information\n"
@@ -2028,7 +2023,16 @@ def api_welcome_data():
 
         quals = list(counts.keys())
 
-        return jsonify({"quals": quals, "ssa_codes": ssa_codes, "counts": counts})
+        return jsonify({
+            "quals":       quals,
+            "ssa_codes":   ssa_codes,
+            "counts":      counts,
+            "institution": {
+                "full_name": INSTITUTION_FULL_NAME,
+                "abbrev":    INSTITUTION_NAME,
+                "region":    INSTITUTION_REGION,
+            },
+        })
     finally:
         conn.close()
 
@@ -2042,7 +2046,7 @@ def search_courses():
 
     # Subject-tile path — direct SQLite lookup by SSA code, no embedding, no limit
     if subject:
-        ssa_code = SSA_MAP.get(subject)
+        ssa_code = next((k for k, v in SSA_LABELS.items() if v == subject), None)
         if not ssa_code:
             return jsonify({"subject": subject, "results": [], "message": "Unknown subject area."})
         conn = sqlite3.connect(FUTUREFINDER_DB)
@@ -3127,7 +3131,7 @@ def get_sample_courses() -> dict:
         print(f"[sample_courses] error: {e}", flush=True)
         return {"intro_text": "Here are some courses from across our subject areas.", "courses": []}
     return {
-        "intro_text": "Here's a taster — one course from each subject area at GMIoT.",
+        "intro_text": f"Here's a taster — one course from each subject area at {INSTITUTION_NAME}.",
         "courses": courses,
     }
 
@@ -3149,7 +3153,7 @@ def get_filtered_courses(ssa_code: int) -> dict:
     except Exception as e:
         print(f"[filtered_courses] ssa_code={ssa_code} error: {e}", flush=True)
         return {"intro_text": "Here are the courses in that area.", "courses": []}
-    return {"intro_text": "Here are all the courses in that subject area at GMIoT.", "courses": courses}
+    return {"intro_text": f"Here are all the courses in that subject area at {INSTITUTION_NAME}.", "courses": courses}
 
 
 def retrieve_courses_for_pivot(session_id: str, saved_items: list | None = None) -> dict:
@@ -3350,10 +3354,10 @@ def chat_welcome():
         return jsonify({"error": "session_id is required"}), 400
 
     # Keyword shortcut — bypass Sonnet, return one course per SSA area
-    if message.lower() == "show me some ideas":
+    if message.lower() == "show me some course ideas":
         return jsonify({
             "session_id":       session_id,
-            "bot_response":     "Here's a taster of what GMIoT has to offer — one course from each subject area. See anything that appeals?",
+            "bot_response":     f"Here's a taster of what {INSTITUTION_NAME} has to offer — one course from each subject area. See anything that appeals?",
             "pivot_to_courses": True,
             "course_list":      get_sample_courses(),
         })

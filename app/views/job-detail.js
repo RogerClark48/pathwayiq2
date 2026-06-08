@@ -5,6 +5,7 @@ import { state, isSaved, toggleSave, unsaveItem, saveItem } from '../state.js';
 import { logEvent }                                        from '../analytics.js';
 import { subject, subjectIconSvg }                         from '../subjects.js';
 import { renderProse, renderField, splitProse }            from '../dom.js';
+import { getWelcomeData }                                  from '../api.js';
 
 // Generic role icon for the header watermark (intentionally not a subject icon)
 const ROLE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -247,7 +248,7 @@ function overviewPane(d) {
     const gm = document.createElement('div');
     gm.className = 'jd-gm';
     const gmHead = document.createElement('h6');
-    gmHead.textContent = 'Working in Greater Manchester';
+    gmHead.textContent = `Working in ${getWelcomeData()?.institution?.region || 'Greater Manchester'}`;
     const gmBody = document.createElement('p');
     gmBody.textContent = d.employer_text;
     gm.appendChild(gmHead);
@@ -388,7 +389,7 @@ function loadCoursesInto(panel, jobId) {
       if (!results.length) {
         const p = document.createElement('p');
         p.className = 'nb-body nb-muted';
-        p.textContent = 'No matching GMIoT courses found.';
+        p.textContent = `No matching ${getWelcomeData()?.institution?.abbrev || 'GMIoT'} courses found.`;
         panel.appendChild(p);
         return;
       }

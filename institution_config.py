@@ -17,7 +17,7 @@ _BASE = os.path.dirname(os.path.abspath(__file__))
 # ---------------------------------------------------------------------------
 
 INSTITUTION_NAME      = "GMIoT"
-INSTITUTION_FULL_NAME = "GMIoT — Greater Manchester's Institute of Technology"
+INSTITUTION_FULL_NAME = "Greater Manchester Institute of Technology"
 INSTITUTION_REGION    = "Greater Manchester"
 
 # ---------------------------------------------------------------------------
@@ -38,20 +38,6 @@ PROVIDERS = {
     "Tameside College":            "Ashton-under-Lyne",
     "Bury College":                "Bury",
     "Ada College":                 "Manchester city centre; specialises in digital and technology",
-}
-
-# ---------------------------------------------------------------------------
-# Subject tile navigation
-# Maps frontend tile label → exact ssa_label value in the courses table
-# ---------------------------------------------------------------------------
-
-SSA_MAP = {
-    'Engineering':    4,   # Engineering and Manufacturing Technologies
-    'Digital & Tech': 6,   # Information and Communication Technology
-    'Construction':   5,   # Construction, Planning and the Built Environment
-    'Health':         1,   # Health, Public Services and Care
-    'Arts & Media':   10,  # Arts, Media and Publishing
-    'Sustainability': 99,  # Custom code — Sustainability
 }
 
 # ---------------------------------------------------------------------------
@@ -77,27 +63,3 @@ QUAL_FILTER_MAP = {
     'Short Course':             ['Award', 'Short Course'],
 }
 
-# ---------------------------------------------------------------------------
-# Subject areas — used in prompts to tell Haiku what subjects are covered
-# Each entry: (ssa_label, brief description of disciplines covered)
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Subject areas — used in prompts to tell Haiku what subjects are covered
-# Each entry: (ssa_label, brief description of disciplines covered)
-# ---------------------------------------------------------------------------
-
-SUBJECT_AREAS = [
-    ("Engineering and Manufacturing Technologies",
-     "mechanical, electrical, manufacturing, automotive"),
-    ("Information and Communication Technology",
-     "software development, networking, cybersecurity, data"),
-    ("Construction, Planning and the Built Environment",
-     "building, civil engineering, architecture, surveying"),
-    ("Health, Public Services and Care",
-     "nursing, healthcare, social care"),
-    ("Arts, Media and Publishing",
-     "creative arts, graphic design, media production"),
-    ("Business, Administration and Law",
-     "business management, finance, administration"),
-]

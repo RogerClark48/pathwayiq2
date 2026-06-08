@@ -2278,8 +2278,7 @@ body {
 
 /* ── Suggestion chips + input wrap ──────────────────────────────────────── */
 .chat-input-wrap{flex:none;padding:9px 13px 13px;background:linear-gradient(0deg,var(--bg,#FBFAF6) 72%,transparent);display:flex;flex-direction:column;gap:9px}
-.chat-sugs{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none}
-.chat-sugs::-webkit-scrollbar{display:none}
+.chat-sugs{display:flex;gap:7px;flex-wrap:wrap}
 .chat-sugs:empty{display:none}
 .chat-sugs button{flex:none;font-size:11px;border:1px solid var(--hair);background:var(--surface);border-radius:999px;padding:6px 11px;color:var(--ink-2);display:inline-flex;gap:6px;align-items:center;cursor:pointer;white-space:nowrap;box-shadow:var(--shadow-sm);font-family:var(--font-body)}
 .chat-bar,.chat-input-box{display:flex;align-items:center;gap:8px;background:var(--surface);border:1.5px solid var(--hair);border-radius:14px;padding:10px 10px 10px 15px;box-shadow:var(--shadow-sm)}

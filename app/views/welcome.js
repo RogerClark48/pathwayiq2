@@ -7,7 +7,7 @@ import { subject, subjectIconSvg } from '../subjects.js';
 
 const STARTER_CHIPS = [
   "I'm good with my hands",
-  "Something with computers",
+  "I'm interested in something with computers",
   "I want a job that pays well",
   "I'm not sure what I want yet",
 ];
@@ -18,7 +18,7 @@ function escAttr(s) {
 
 function tileHtml(ssa) {
   const s = subject(ssa);
-  return `<button class="mtile" data-seed="${escAttr(s.label)} courses" style="--sub:${s.colour}">
+  return `<button class="mtile" data-seed="${escAttr(`I'd like to explore ${s.label} courses`)}" style="--sub:${s.colour}">
     <span class="wm">${subjectIconSvg(ssa)}</span>
     <span class="ic">${subjectIconSvg(ssa)}</span>
     <b>${s.label}</b>
@@ -102,8 +102,16 @@ export function WelcomeView() {
     }
   });
 
-  // Subject tiles — built from /api/welcome-data, ordered by SSA code ascending
+  // Subject tiles and institution strings — built from /api/welcome-data
   loadWelcomeData().then(data => {
+    const inst     = data.institution || {};
+    const fullName = inst.full_name || 'Greater Manchester Institute of Technology';
+    const abbrev   = inst.abbrev   || 'GMIoT';
+
+    el.querySelector('.inst').textContent = fullName;
+    el.querySelector('.la-hello p').textContent =
+      `Tell me what you enjoy — or where you'd like to go next — and I'll find ${abbrev} courses and show where they lead.`;
+
     const ssaCodes = (data.ssa_codes || []).slice().sort((a, b) => Number(a) - Number(b));
     tilesEl.innerHTML = ssaCodes.map(tileHtml).join('');
     tilesEl.querySelectorAll('.mtile').forEach(btn => {

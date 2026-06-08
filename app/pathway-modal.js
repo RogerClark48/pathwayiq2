@@ -1,5 +1,7 @@
 /* Qualification pathway map — modal, render-on-demand */
 
+import { getWelcomeData } from './api.js';
+
 const PATHWAY_EXPLANATIONS = {
   gcse: {
     heading: 'GCSEs / Level 2',
@@ -183,7 +185,7 @@ function buildModal() {
     if (data.not_gmiot) {
       const note = document.createElement('p');
       note.className = 'pathway-exp-body';
-      note.textContent = 'A Levels are a well-established academic route, typically taken in sixth form or college. GMIoT does not offer A Level courses — but A Levels remain a valid path into HNC, HND, Foundation Degree, or university study.';
+      note.textContent = `A Levels are a well-established academic route, typically taken in sixth form or college. ${getWelcomeData()?.institution?.abbrev || 'GMIoT'} does not offer A Level courses — but A Levels remain a valid path into HNC, HND, Foundation Degree, or university study.`;
       expPanel.appendChild(note);
     } else {
       if (data.body) {
@@ -201,7 +203,7 @@ function buildModal() {
       if (data.gmiot) {
         const indicator = document.createElement('p');
         indicator.className = 'pathway-exp-gmiot';
-        indicator.textContent = 'GMIoT offers courses at this level — explore them in the app.';
+        indicator.textContent = `${getWelcomeData()?.institution?.abbrev || 'GMIoT'} offers courses at this level — explore them in the app.`;
         expPanel.appendChild(indicator);
       }
     }
