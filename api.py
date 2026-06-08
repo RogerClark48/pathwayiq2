@@ -3425,9 +3425,19 @@ def retrieve_courses_for_pivot(session_id: str, saved_items: list | None = None)
         f"{c['course_id']} | {c['title']} | {c['qual_type']} Level {c['level']} | {c['preview']}"
         for c in candidates
     ]
+
+    filter_guidance = ""
+    if filters.get("provider"):
+        filter_guidance = f"\n\nActive filter: show courses from {filters['provider']} only."
+    else:
+        # Explicitly signal broad search so Haiku doesn't cluster around providers
+        # mentioned heavily in the conversation
+        filter_guidance = "\n\nNo provider filter is active — select courses from across all providers. Do not cluster results around any single provider mentioned in the conversation."
+
     haiku_msg = (
         f"Conversation:\n{conversation_text}"
         + saved_section
+        + filter_guidance
         + f"\n\nCandidate courses (ID | Title | Qual Level | Preview):\n"
         + "\n".join(candidate_lines)
         + "\n\nUsing the conversation above as your guide, select the 5–8 courses that best match what this specific user has said they want. The conversation is your primary input — read it carefully before selecting."
