@@ -3566,7 +3566,7 @@ def chat_welcome():
         sess_filters = get_welcome_session(session_id).get("filters") or {}
         course_list  = get_sample_courses(sess_filters)
         pivot = True
-    elif result.get("filter_code"):
+    elif result.get("filter_code") is not None:
         sess_filters = get_welcome_session(session_id).get("filters") or {}
         course_list  = get_filtered_courses(result["filter_code"], sess_filters)
         pivot = True
