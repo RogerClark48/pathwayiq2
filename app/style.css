@@ -147,6 +147,10 @@ body {
   text-align: center;
 }
 
+/* ── App shell — mobile baseline (desktop overrides at end of file) ─────── */
+#app-shell     { display: contents; } /* invisible wrapper — children join body's flex */
+#desktop-right { display: none; }     /* hidden on mobile */
+
 /* ── View root ───────────────────────────────────────────────────────────── */
 #view-root {
   flex: 1;
@@ -2286,6 +2290,48 @@ body {
 .chat-bar input::placeholder,.chat-input-field::placeholder{color:var(--muted)}
 .chat-bar .send,.chat-send-btn{width:32px;height:32px;border-radius:50%;background:var(--ff-blue);color:#fff;display:grid;place-items:center;flex:none;border:0;cursor:pointer;transition:opacity .15s}
 .chat-send-btn:disabled{background:var(--bg-2,#F3F0E8);color:var(--muted);cursor:default}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Desktop two-panel shell  (≥768px)
+   All desktop-only overrides live here. Everything above is mobile-first
+   and is not modified. Left panel content wired in next phase.
+══════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 768px) {
+
+  html {
+    background: var(--bg, #FBFAF6); /* remove dark phone-tray backdrop */
+  }
+
+  body {
+    max-width: none;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  #app-shell {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    flex: 1;          /* fill body's flex context */
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #view-root {
+    max-width: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  #desktop-right {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg, #FBFAF6);
+    border-left: 1px solid var(--hair, #E8E4D8);
+    overflow: hidden;
+  }
+
+}
 
 /* ── Carousel: branded subject pins ─────────────────────────────────────── */
 .ffpin-host { background: none !important; border: none !important; }

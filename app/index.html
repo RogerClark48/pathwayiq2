@@ -13,8 +13,12 @@
 </head>
 <body>
 
-<!-- ── View container (router renders here) ──────────────────────────────── -->
-<main id="view-root"></main>
+<div id="app-shell">
+  <!-- View container (router renders here) — left 360px on desktop -->
+  <main id="view-root"></main>
+  <!-- Desktop right panel: course/career views (populated in next phase) -->
+  <aside id="desktop-right"></aside>
+</div>
 
 <script type="module" src="app.js"></script>
 </body>
