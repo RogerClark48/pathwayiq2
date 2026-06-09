@@ -666,18 +666,25 @@ def welcome_chat_llm(session_id: str, message: str, saved_items: list | None = N
     filter_summary = active_filter_summary(sess.get("filters") or {})
     filter_note    = f"\nActive search filters: {filter_summary}." if filter_summary else "\nNo active search filters."
 
+    shown = sess.get("shown_courses") or []
+    if shown:
+        shown_lines = "\n".join(f"- {c['title']} (ID: {c['id']})" for c in shown)
+        shown_note  = f"\nCourses shown to user so far:\n{shown_lines}"
+    else:
+        shown_note  = ""
+
     if sess.get("pivot_done"):
         dynamic_note = (
             "\n\n[Courses have been shown. You are now in advisory mode — see "
             "## Post-pivot advisory mode in your instructions. You may still use "
             "[FILTER:N] and [PIVOT_TO_COURSES] markers if the user asks to see courses.]"
-            + filter_note + saved_note
+            + filter_note + shown_note + saved_note
         )
     else:
         dynamic_note = (
             f"\n\n[This is interview turn {sess['interview_turn_count'] + 1}. "
             f"At turn 4 or beyond with no usable input, use the graceful exit.]"
-            + filter_note + saved_note
+            + filter_note + shown_note + saved_note
         )
     try:
         resp = _anthropic_post({
@@ -3591,6 +3598,16 @@ def chat_welcome():
         sess = get_welcome_session(session_id)
         with _welcome_sessions_lock:
             sess["pivot_done"] = True
+            if course_list and course_list.get("courses"):
+                new_shown = [
+                    {"id": c["course_id"], "title": c["course_title"]}
+                    for c in course_list["courses"]
+                    if c.get("course_id") and c.get("course_title")
+                ]
+                existing_ids = {c["id"] for c in sess.get("shown_courses", [])}
+                sess.setdefault("shown_courses", []).extend(
+                    c for c in new_shown if c["id"] not in existing_ids
+                )
 
     return jsonify({
         "session_id":       session_id,
