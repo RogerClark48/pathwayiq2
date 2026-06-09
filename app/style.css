@@ -2331,35 +2331,6 @@ body {
     overflow: hidden;
   }
 
-  /* Split mode — course-detail (top) + career-view (bottom) */
-  #desktop-right.split {
-    display: grid;
-    grid-template-rows: 1fr 1fr;
-    overflow: hidden;
-  }
-
-  #desktop-right.split > div {
-    overflow-y: auto;
-    min-height: 0;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  #right-bottom {
-    border-top: 1px solid var(--hair, #E8E4D8);
-  }
-
-  .split-loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    font-size: 13px;
-    color: var(--muted, #9e9a8e);
-    font-family: var(--font-body);
-  }
-
-  .split-loading--err { color: var(--c-caution, #c0392b); }
-
 }
 
 /* ── Carousel: branded subject pins ─────────────────────────────────────── */
