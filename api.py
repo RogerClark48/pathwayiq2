@@ -240,7 +240,7 @@ Wigan and Leigh?" → set [PROVIDER:Wigan and Leigh] and emit [FILTER:0].
 Active session filters (provider, level, mode, qual) are applied automatically.
 
 For anything more specific than a whole subject area, use [PIVOT_TO_COURSES]
-instead — e.g. "software development courses" → [PIVOT_TO_COURSES], not
+instead — e.g. "software development courses" → [m_TO_COURSES], not
 [FILTER:6].
 
 Do not use [FILTER:N] and [PIVOT_TO_COURSES] in the same response.
@@ -420,7 +420,7 @@ _jpc_conn.commit()
 _jpc_conn.close()
 
 EXPLAIN_CACHE_VERSION  = 1  # bump when the explain prompt changes to force regeneration
-COURSES_CACHE_VERSION  = 2  # bump when the job_courses Haiku prompt changes
+COURSES_CACHE_VERSION  = 3  # bump when the job_courses Haiku prompt changes
 LADDER_CACHE_VERSION   = 1  # bump when the climb prompt changes to force regeneration
 
 CAUTION_DIVERGENCE_THRESHOLD  = 15  # domain% - skills% > this → caution flag
@@ -2466,10 +2466,9 @@ def job_courses(job_id):
     vector   = stored["embeddings"][0]
     job_meta = stored["metadatas"][0]
 
-    # Fetch a larger pool so Haiku has enough to choose from
     hits = match_courses_col.query(
         query_embeddings=[vector],
-        n_results=15,
+        n_results=25,
         include=["metadatas", "distances"],
     )
 
@@ -2489,23 +2488,28 @@ def job_courses(job_id):
     if job:
         job_context = (
             f"Job title: {job['title']}\n"
-            f"Skills required: {(job.get('skills_required') or '')[:400]}\n"
-            f"Entry routes: {(job.get('entry_routes') or '')[:300]}"
+            f"Overview: {(job.get('overview') or '')[:300]}\n"
+            f"Skills required: {(job.get('skills_required') or '')[:500]}\n"
+            f"Entry routes: {(job.get('entry_routes') or '')[:400]}"
         )
     else:
         job_context = f"Job title: {job_meta.get('title', '')}"
 
     candidate_lines = [
-        f"{c['cid']} | {c['db']['course_title']} | {c['db'].get('qual_type','')} Level {c['db'].get('level','')} | {(c['db'].get('overview') or '')[:200]}"
+        f"{c['cid']} | {c['db']['course_title']} | {c['db'].get('qual_type','')} Level {c['db'].get('level','')} | "
+        f"Leads to: {(c['db'].get('progression') or '')[:200]} | Overview: {(c['db'].get('overview') or '')[:150]}"
         for c in candidates
     ]
     haiku_msg = (
         f"{job_context}\n\n"
-        f"Candidate courses (ID | Title | Qual Level | Overview):\n"
+        f"Candidate courses (ID | Title | Qual Level | Where the course leads | Overview):\n"
         + "\n".join(candidate_lines)
         + f"\n\nSelect the {limit} courses that most genuinely prepare someone for this role. "
-        f"Read the job's skills and entry routes carefully — only include courses whose content "
-        f"clearly aligns with what this job actually requires."
+        f"Focus on the 'Leads to' field — a course that explicitly mentions this job type or "
+        f"its field in its progression text is a strong match. "
+        f"Only include a course if the job's core requirements are a major part of the course "
+        f"content, not merely mentioned in passing. A course that covers the topic briefly "
+        f"alongside many unrelated areas is not a good match."
     )
 
     selected_ids = None
