@@ -33,14 +33,18 @@ export function go(name, slices = {}) {
   document.body.dataset.view = name;
   el.scrollTop = 0;
   el.innerHTML = '';
-  el.appendChild(fn(slices));
-  _current = name;
 
-  // When returning to a left-panel view on desktop, clear the right panel
-  if (!useRight && isDesktop()) {
+  // Clear the right panel before rendering so left-panel views (e.g. welcome)
+  // can populate it as part of their own render without being clobbered.
+  // Exception: chat-first keeps whatever is showing on the right — the map hero
+  // stays live while Finn thinks, then gets replaced when courses arrive.
+  if (!useRight && isDesktop() && name !== 'chat-first') {
     const rp = rightPanel();
     if (rp) rp.innerHTML = '';
   }
+
+  el.appendChild(fn(slices));
+  _current = name;
 }
 
 export function currentView() {

@@ -391,6 +391,10 @@ export function StartChatView({ prefill, autosend } = {}) {
         state.chat.messages.push({ role: 'cta', courseList: data.course_list });
         const block = makePivotBlock(data.course_list);
         if (block) messagesEl.appendChild(block);
+
+        if (window.matchMedia('(min-width: 768px)').matches) {
+          go('course-list', { courseList: data.course_list, backRoute: 'chat-first' });
+        }
       } else {
         state.chat.messages.push({ role: 'bot', text: reply });
         messagesEl.appendChild(makeBubble('bot', reply));

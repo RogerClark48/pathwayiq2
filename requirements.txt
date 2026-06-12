@@ -108,3 +108,4 @@ yarl==1.23.0
 zipp==3.23.0
 zstandard==0.25.0
 gunicorn==25.3.0
+google-api-python-client==2.197.0

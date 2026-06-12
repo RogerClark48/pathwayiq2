@@ -33,13 +33,17 @@ function sourceName(src) {
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function JobDetailView(slices = {}) {
-  const jobId      = slices.jobId;
-  const jobTitle   = slices.jobTitle   || '';
-  const backRoute  = slices.backRoute  || 'career-view';
-  const backSlices = slices.backSlices || {};
-  // Inherit the originating subject colour for visual continuity; neutral if no context.
-  const accent     = slices.ssa ? subject(slices.ssa).colour : 'var(--sub-neutral)';
+  const { jobId, jobTitle, backRoute, backSlices, ssa } = slices;
+  const accent = slices.ssa ? subject(slices.ssa).colour : 'var(--sub-neutral)';
+  return buildJobEl({
+    jobId, jobTitle, ssa, accent,
+    onBack: () => go(backRoute, backSlices || {}),
+  });
+}
 
+// ── Element builder — used by both JobDetailView (routing) and desktop split ──
+
+export function buildJobEl({ jobId, jobTitle, ssa, accent, onBack, backLabel, onCoursesClick }) {
   const el = document.createElement('div');
   el.className = 'view view-job-detail';
 
@@ -54,7 +58,7 @@ export function JobDetailView(slices = {}) {
       <span>Loading…</span>
     </div>`;
 
-  el.querySelector('.cd-load-back').addEventListener('click', () => go(backRoute, backSlices));
+  el.querySelector('.cd-load-back').addEventListener('click', onBack);
 
   logEvent('career_detail_open', 'job', jobId, jobTitle);
 
@@ -65,7 +69,7 @@ export function JobDetailView(slices = {}) {
     })
     .then(d => {
       el.innerHTML = '';
-      renderDetail(el, d, jobId, jobTitle, backRoute, backSlices, accent, slices.ssa);
+      renderDetail(el, d, jobId, jobTitle, onBack, accent, ssa, backLabel, onCoursesClick);
     })
     .catch(err => {
       console.error('[job-detail]', err);
@@ -77,7 +81,7 @@ export function JobDetailView(slices = {}) {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
-function renderDetail(el, d, jobId, jobTitle, backRoute, backSlices, accent, ssa) {
+function renderDetail(el, d, jobId, jobTitle, onBack, accent, ssa, backLabel, onCoursesClick) {
   // Propagate subject colour to the whole view so notebook panes (Climb) inherit it
   el.style.setProperty('--sub', accent);
 
@@ -86,16 +90,23 @@ function renderDetail(el, d, jobId, jobTitle, backRoute, backSlices, accent, ssa
   head.className = 'jd-head';
   head.style.setProperty('--sub', accent);
 
+  const backBtnHtml = backLabel
+    ? `<button class="jd-back-pill">${backLabel}<svg viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+         stroke-linejoin="round" width="12" height="12" aria-hidden="true">
+         <polyline points="9 18 15 12 9 6"/></svg></button>`
+    : `<button class="ic jd-back" aria-label="Back">
+         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+           <polyline points="15 18 9 12 15 6"/>
+         </svg>
+       </button>`;
+
   head.innerHTML = `
     <span class="wm" aria-hidden="true">${subjectIconSvg(ssa)}</span>
     <div class="cd-bar">
-      <button class="ic jd-back" aria-label="Back">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline points="15 18 9 12 15 6"/>
-        </svg>
-      </button>
-      <button class="ic jd-finn" aria-label="Back to Finn">
+      ${backBtnHtml}
+      <button class="ic jd-finn" aria-label="Back to chat">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -109,7 +120,8 @@ function renderDetail(el, d, jobId, jobTitle, backRoute, backSlices, accent, ssa
     <h4>${d.title}</h4>
     ${d.salary_display ? `<div class="jd-headfacts"><span class="jd-pay">${d.salary_display}</span></div>` : ''}`;
 
-  head.querySelector('.jd-back').addEventListener('click', () => go(backRoute, backSlices));
+  (head.querySelector('.jd-back') || head.querySelector('.jd-back-pill'))
+    .addEventListener('click', onBack);
   head.querySelector('.jd-finn').addEventListener('click', () => go('chat-first'));
 
   const saveBtn = head.querySelector('.jd-save');
@@ -187,25 +199,36 @@ function renderDetail(el, d, jobId, jobTitle, backRoute, backSlices, accent, ssa
 
   const ctaHead = document.createElement('button');
   ctaHead.className = 'jd-cta-head';
-  ctaHead.innerHTML = `Courses that lead here <span class="chev">▾</span>`;
   cta.appendChild(ctaHead);
 
-  const ctaBody = document.createElement('div');
-  ctaBody.className = 'jd-cta-body';
-  ctaBody.hidden = true;
-  cta.appendChild(ctaBody);
+  if (onCoursesClick) {
+    // Desktop split: tap widens the overlay into role | courses pane
+    ctaHead.innerHTML = `Courses that lead here <svg viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+      stroke-linejoin="round" width="16" height="16" aria-hidden="true">
+      <polyline points="9 18 15 12 9 6"/></svg>`;
+    ctaHead.addEventListener('click', onCoursesClick);
+  } else {
+    // Mobile / standalone: inline expand below the button
+    ctaHead.innerHTML = `Courses that lead here <span class="chev">▾</span>`;
 
-  let ctaOpen = false;
-  let coursesLoaded = false;
-  ctaHead.addEventListener('click', () => {
-    ctaOpen = !ctaOpen;
-    ctaBody.hidden = !ctaOpen;
-    ctaHead.querySelector('.chev').textContent = ctaOpen ? '▴' : '▾';
-    if (ctaOpen && !coursesLoaded) {
-      coursesLoaded = true;
-      loadCoursesInto(ctaBody, jobId);
-    }
-  });
+    const ctaBody = document.createElement('div');
+    ctaBody.className = 'jd-cta-body';
+    ctaBody.hidden = true;
+    cta.appendChild(ctaBody);
+
+    let ctaOpen = false;
+    let coursesLoaded = false;
+    ctaHead.addEventListener('click', () => {
+      ctaOpen = !ctaOpen;
+      ctaBody.hidden = !ctaOpen;
+      ctaHead.querySelector('.chev').textContent = ctaOpen ? '▴' : '▾';
+      if (ctaOpen && !coursesLoaded) {
+        coursesLoaded = true;
+        loadCoursesInto(ctaBody, jobId);
+      }
+    });
+  }
 
   el.appendChild(cta);
 }
@@ -244,6 +267,10 @@ function overviewPane(d) {
     frag.appendChild(a);
   }
 
+  if (d.icould_videos?.length) {
+    frag.appendChild(buildVideoRow(d.icould_videos));
+  }
+
   if (d.employer_text) {
     const gm = document.createElement('div');
     gm.className = 'jd-gm';
@@ -257,6 +284,111 @@ function overviewPane(d) {
   }
 
   return frag;
+}
+
+function buildVideoRow(videos) {
+  const section = document.createElement('div');
+  section.className = 'jd-videos';
+
+  const label = document.createElement('p');
+  label.className = 'jd-videos-label';
+  label.textContent = 'Hear from people in this kind of work';
+  section.appendChild(label);
+
+  const row = document.createElement('div');
+  row.className = 'jd-videos-row';
+
+  videos.forEach(v => {
+    const card = document.createElement('button');
+    card.className = 'jd-video-card';
+    card.setAttribute('aria-label', `Play: ${v.title}`);
+
+    const thumb = document.createElement('div');
+    thumb.className = 'jd-video-thumb';
+    if (v.thumbnail_url) {
+      thumb.style.backgroundImage = `url('${v.thumbnail_url}')`;
+    }
+
+    const play = document.createElement('div');
+    play.className = 'jd-video-play';
+    play.innerHTML = `<svg viewBox="0 0 24 24" fill="white" aria-hidden="true" width="28" height="28">
+      <circle cx="12" cy="12" r="12" fill="rgba(0,0,0,0.45)"/>
+      <polygon points="10,8 18,12 10,16" fill="white"/>
+    </svg>`;
+    thumb.appendChild(play);
+
+    const info = document.createElement('div');
+    info.className = 'jd-video-info';
+
+    const title = document.createElement('span');
+    title.className = 'jd-video-title';
+    title.textContent = v.title;
+
+    const attr = document.createElement('span');
+    attr.className = 'jd-video-attr';
+    attr.textContent = 'icould career stories';
+
+    info.appendChild(title);
+    info.appendChild(attr);
+
+    card.appendChild(thumb);
+    card.appendChild(info);
+    card.addEventListener('click', () => openVideoModal(v.video_id, v.title));
+    row.appendChild(card);
+  });
+
+  section.appendChild(row);
+  return section;
+}
+
+function openVideoModal(videoId, title) {
+  const modal = document.createElement('div');
+  modal.className = 'video-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', title);
+
+  const panel = document.createElement('div');
+  panel.className = 'video-modal-panel';
+
+  const header = document.createElement('div');
+  header.className = 'video-modal-header';
+
+  const titleEl = document.createElement('span');
+  titleEl.className = 'video-modal-title';
+  titleEl.textContent = title;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'video-modal-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '✕';
+
+  header.appendChild(titleEl);
+  header.appendChild(closeBtn);
+
+  const frame = document.createElement('iframe');
+  frame.className = 'video-modal-frame';
+  frame.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+  frame.allow = 'autoplay; encrypted-media; fullscreen';
+  frame.setAttribute('allowfullscreen', '');
+
+  panel.appendChild(header);
+  panel.appendChild(frame);
+  modal.appendChild(panel);
+
+  function close() {
+    frame.src = '';
+    modal.remove();
+    document.removeEventListener('keydown', onKey);
+  }
+  function onKey(e) { if (e.key === 'Escape') close(); }
+
+  closeBtn.addEventListener('click', close);
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  document.addEventListener('keydown', onKey);
+
+  document.body.appendChild(modal);
+  closeBtn.focus();
 }
 
 function dutiesPane(d) {
@@ -373,9 +505,9 @@ function renderProseFallback(pane, jobId) {
     .catch(() => {});
 }
 
-// Lazy — called on first expand of the CTA bar.
+// Lazy — called on first expand of the CTA bar (mobile) or first "Courses" tap (desktop).
 // Terminal: no navigation. Each row opens an inline preview + save only.
-function loadCoursesInto(panel, jobId) {
+export function loadCoursesInto(panel, jobId) {
   const loading = document.createElement('p');
   loading.className = 'nb-body nb-muted';
   loading.textContent = 'Finding courses…';

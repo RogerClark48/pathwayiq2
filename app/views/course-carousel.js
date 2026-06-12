@@ -92,9 +92,8 @@ export function CourseCarouselView(slices = {}) {
   return el;
 }
 
-// ── Full render ───────────────────────────────────────────────────────────────
-function renderFull(el, courses, userLoc, backRoute) {
-  // Shallow-copy and optionally annotate + sort by distance
+// ── Shared: distance sort ─────────────────────────────────────────────────────
+function sortByDistance(courses, userLoc) {
   const sorted = courses.map(c => ({ ...c }));
   if (userLoc) {
     sorted.forEach(c => {
@@ -104,10 +103,47 @@ function renderFull(el, courses, userLoc, backRoute) {
     });
     sorted.sort((a, b) => (a._distMi ?? Infinity) - (b._distMi ?? Infinity));
   }
+  return sorted;
+}
 
+// ── Shared: filter ────────────────────────────────────────────────────────────
+function applyFilters(sorted, mf, lf) {
+  const f = sorted.filter(c => {
+    if (mf && modeLabel(c.mode) !== mf) return false;
+    if (lf && c.level !== lf) return false;
+    return true;
+  });
+  return f.length ? f : sorted;
+}
+
+// ── Dispatcher — decides deck vs split and wires live reflow ─────────────────
+function renderFull(el, courses, userLoc, backRoute) {
+  const sorted = sortByDistance(courses, userLoc);
+
+  function doLayout() {
+    if (_activeMap) { try { _activeMap.remove(); } catch (_) {} _activeMap = null; }
+    el.innerHTML = '';
+    if (window.innerWidth >= 1200) {
+      renderSplit(el, sorted, userLoc, backRoute);
+    } else {
+      renderDeck(el, sorted, userLoc, backRoute);
+    }
+  }
+
+  doLayout();
+
+  // Live reflow across the 1200px boundary
+  const mq = window.matchMedia('(min-width: 1200px)');
+  function onBreakpoint() {
+    if (!el.isConnected) { mq.removeEventListener('change', onBreakpoint); return; }
+    doLayout();
+  }
+  mq.addEventListener('change', onBreakpoint);
+}
+
+// ── Deck layout (mobile + 768–1199px) ────────────────────────────────────────
+function renderDeck(el, sorted, userLoc, backRoute) {
   const hasLoc = !!userLoc;
-
-  // Refine options — only show chips when there's more than one value
   const modes  = [...new Set(sorted.map(c => modeLabel(c.mode)).filter(Boolean))];
   const levels = [...new Set(sorted.map(c => c.level).filter(v => v != null))].sort((a, b) => a - b);
   const showRefine = modes.length > 1 || levels.length > 1;
@@ -318,12 +354,7 @@ function renderFull(el, courses, userLoc, backRoute) {
   });
 
   function applyRefine() {
-    const filtered = sorted.filter(c => {
-      if (modeFilter  && modeLabel(c.mode) !== modeFilter) return false;
-      if (levelFilter && c.level !== levelFilter) return false;
-      return true;
-    });
-    const set = filtered.length ? filtered : sorted;
+    const set = applyFilters(sorted, modeFilter, levelFilter);
     if (subEl) subEl.textContent = subText(set.length);
     buildCards(set);
     track.scrollLeft = 0;
@@ -417,4 +448,250 @@ function renderFull(el, courses, userLoc, backRoute) {
     setActivePin(activeCourses[currentIdx]);
     setTimeout(() => _activeMap?.invalidateSize(), 60);
   });
+}
+
+// ── Split layout (≥1200px) — list column + open Leaflet map ──────────────────
+function renderSplit(el, sorted, userLoc, backRoute) {
+  const hasLoc = !!userLoc;
+  const modes  = [...new Set(sorted.map(c => modeLabel(c.mode)).filter(Boolean))];
+  const levels = [...new Set(sorted.map(c => c.level).filter(v => v != null))].sort((a, b) => a - b);
+  const showRefine = modes.length > 1 || levels.length > 1;
+
+  function subText(count) {
+    if (!hasLoc) return `${count} found`;
+    return count === sorted.length ? 'Near you · nearest first' : `${count} of ${sorted.length} · nearest first`;
+  }
+
+  const modeChipsHtml  = modes.map(m => `<button class="ccx-chip" data-mode="${m}">${m}</button>`).join('');
+  const dividerHtml    = modes.length && levels.length ? `<span class="ccx-divider"></span>` : '';
+  const levelChipsHtml = levels.map(l => `<button class="ccx-chip" data-level="${l}">Level ${l}</button>`).join('');
+
+  el.innerHTML = `
+    <div class="dbx">
+      <div class="dbx-list">
+        <div class="dbx-lh">
+          <div class="ccx-title-block">
+            <span class="ccx-count" id="dbx-count"><b>${sorted.length}</b> courses</span>
+            <span class="ccx-sub" id="dbx-sub">${subText(sorted.length)}</span>
+          </div>
+          ${showRefine ? `<div class="ccx-refine">${modeChipsHtml}${dividerHtml}${levelChipsHtml}</div>` : ''}
+        </div>
+        <div class="dbx-rows" id="dbx-rows"></div>
+      </div>
+      <div class="dbx-map" id="dbx-map"></div>
+    </div>`;
+
+  const rowsEl  = el.querySelector('#dbx-rows');
+  const countEl = el.querySelector('#dbx-count');
+  const subEl   = el.querySelector('#dbx-sub');
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let activeSet  = sorted;
+  let selectedId = null;
+  const markerById = new Map(); // courseId → L.Marker
+  const cardById   = new Map(); // courseId → card element
+
+  // ── Pin helpers ───────────────────────────────────────────────────────────
+  function getPinEl(marker) {
+    return marker.getElement()?.querySelector('.ffpin');
+  }
+
+  function setPinActive(courseId, on) {
+    const marker = markerById.get(courseId);
+    if (!marker) return;
+    getPinEl(marker)?.classList.toggle('is-active', on);
+    marker.setZIndexOffset(on ? 1000 : 0);
+  }
+
+  // ── Selection ─────────────────────────────────────────────────────────────
+  function selectById(courseId, scrollCard) {
+    if (selectedId) {
+      cardById.get(selectedId)?.classList.remove('is-selected');
+      setPinActive(selectedId, false);
+    }
+    selectedId = courseId;
+    cardById.get(courseId)?.classList.add('is-selected');
+    setPinActive(courseId, true);
+
+    const course = activeSet.find(c => c.course_id === courseId);
+    if (course?.lat != null && _activeMap) {
+      _activeMap.panTo([course.lat, course.lng], { animate: true, duration: 0.5 });
+    }
+
+    if (scrollCard) {
+      const card = cardById.get(courseId);
+      if (card) rowsEl.scrollTop = card.offsetTop - 8;
+    }
+  }
+
+  // ── Card builder ──────────────────────────────────────────────────────────
+  function buildCards(set) {
+    rowsEl.innerHTML = '';
+    cardById.clear();
+
+    set.forEach(course => {
+      const s        = subject(course.ssa_code);
+      const raw      = course.course_title || '';
+      const { title, specialism } = splitTitle(raw);
+      const lvlQual  = course.qual_type || (course.level != null ? `L${course.level}` : '');
+      const provider = [course.provider_name, course.campus_name].filter(Boolean).join(' · ');
+      const hook     = (course.preview_text || '').slice(0, 160);
+      const distHtml = (hasLoc && course._distMi != null)
+        ? `<span class="dist">${course._distMi.toFixed(1)} mi</span>` : '';
+
+      const chipsHtml = [
+        course.qual_type       ? `<span>${course.qual_type}</span>`       : '',
+        modeLabel(course.mode) ? `<span>${modeLabel(course.mode)}</span>` : '',
+        distHtml,
+      ].filter(Boolean).join('');
+
+      const card = document.createElement('div');
+      card.className = 'ck ck-course' + (course.course_id === selectedId ? ' is-selected' : '');
+      card.style.setProperty('--sub', s.colour);
+      card.dataset.courseId = String(course.course_id);
+      card.innerHTML = `
+        <div class="cc-top">
+          <span class="wm">${subjectIconSvg(course.ssa_code)}</span>
+          ${lvlQual ? `<span class="lvl">${lvlQual}</span>` : ''}
+          <div class="cc-tt">
+            <b>${title}</b>
+            <span>${provider || specialism || ''}</span>
+          </div>
+        </div>
+        <div class="cc-bd">
+          ${chipsHtml ? `<div class="cc-chips">${chipsHtml}</div>` : ''}
+          ${hook       ? `<p class="cc-hook">${hook}</p>`          : ''}
+        </div>`;
+
+      card.querySelector('.cc-bd').appendChild(bookmarkButton({
+        id:       course.course_id,
+        type:     'course',
+        title:    raw,
+        ssa:      course.ssa_code,
+        subtitle: [course.qual_type, provider].filter(Boolean).join(' · '),
+      }));
+
+      card.addEventListener('mouseenter', () => {
+        if (course.course_id !== selectedId) setPinActive(course.course_id, true);
+      });
+      card.addEventListener('mouseleave', () => {
+        if (course.course_id !== selectedId) setPinActive(course.course_id, false);
+      });
+      card.addEventListener('click', () => {
+        if (course.course_id === selectedId) {
+          logEvent('course_tap', 'course', course.course_id, raw);
+          go('course-detail', { courseId: course.course_id, courseTitle: raw, backRoute: 'course-list' });
+        } else {
+          selectById(course.course_id, false);
+        }
+      });
+
+      rowsEl.appendChild(card);
+      cardById.set(course.course_id, card);
+      logEvent('course_impression', 'course', course.course_id, raw);
+    });
+  }
+
+  // ── Pin sync — replaces all markers for a given course set ────────────────
+  function syncPins(set) {
+    if (!_activeMap) return;
+    markerById.forEach(m => m.remove());
+    markerById.clear();
+
+    const bounds = [];
+    set.forEach(course => {
+      if (course.lat == null || course.lng == null) return;
+      const marker = L.marker([course.lat, course.lng], { icon: makePin(course.ssa_code) });
+      marker.addTo(_activeMap);
+      markerById.set(course.course_id, marker);
+      bounds.push([course.lat, course.lng]);
+
+      marker.on('click', () => selectById(course.course_id, true));
+      marker.on('mouseover', () => {
+        if (course.course_id !== selectedId) setPinActive(course.course_id, true);
+      });
+      marker.on('mouseout', () => {
+        if (course.course_id !== selectedId) setPinActive(course.course_id, false);
+      });
+    });
+
+    if (bounds.length > 1) {
+      _activeMap.fitBounds(bounds, { padding: [40, 40] });
+    } else if (bounds.length === 1) {
+      _activeMap.setView(bounds[0], 13);
+    }
+  }
+
+  // ── Refine ────────────────────────────────────────────────────────────────
+  let modeFilter  = null;
+  let levelFilter = null;
+
+  el.querySelectorAll('.ccx-chip[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modeFilter = modeFilter === btn.dataset.mode ? null : btn.dataset.mode;
+      el.querySelectorAll('.ccx-chip[data-mode]').forEach(b =>
+        b.classList.toggle('on', b.dataset.mode === modeFilter));
+      doRefine();
+    });
+  });
+
+  el.querySelectorAll('.ccx-chip[data-level]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const l = Number(btn.dataset.level);
+      levelFilter = levelFilter === l ? null : l;
+      el.querySelectorAll('.ccx-chip[data-level]').forEach(b =>
+        b.classList.toggle('on', Number(b.dataset.level) === levelFilter));
+      doRefine();
+    });
+  });
+
+  function doRefine() {
+    const set = applyFilters(sorted, modeFilter, levelFilter);
+    activeSet  = set;
+    selectedId = null;
+    subEl.textContent = subText(set.length);
+    buildCards(set);
+    syncPins(set);
+  }
+
+  // ── Leaflet map init ──────────────────────────────────────────────────────
+  requestAnimationFrame(() => {
+    const mapEl = el.querySelector('#dbx-map');
+    if (!mapEl || typeof L === 'undefined') return;
+
+    const first = sorted[0];
+    _activeMap = L.map(mapEl, {
+      center:             [first?.lat ?? 53.5, first?.lng ?? -2.3],
+      zoom:               11,
+      zoomControl:        true,
+      attributionControl: true,
+      dragging:           true,
+      touchZoom:          true,
+      scrollWheelZoom:    true,
+      doubleClickZoom:    true,
+      boxZoom:            false,
+      keyboard:           false,
+    });
+
+    L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>' +
+                     ' &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 19,
+      }
+    ).addTo(_activeMap);
+
+    if (userLoc) {
+      L.circleMarker([userLoc.lat, userLoc.lng], {
+        radius: 7, color: '#fff', fillColor: '#2A6BE8', fillOpacity: 1, weight: 2,
+      }).addTo(_activeMap);
+    }
+
+    syncPins(activeSet);
+    setTimeout(() => _activeMap?.invalidateSize(), 60);
+  });
+
+  // ── Initial card render ───────────────────────────────────────────────────
+  buildCards(activeSet);
 }

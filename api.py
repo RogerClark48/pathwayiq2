@@ -32,6 +32,7 @@ CONNECTIONS_DB     = os.path.join(_BASE, "connections.db")  # LEGACY — superse
 LMI_DB             = os.path.join(_BASE, "lmi.db")
 FUTUREFINDER_DB    = os.path.join(_BASE, "futurefinder.sqlite")
 ANALYTICS_DB       = os.path.join(_BASE, "analytics.db")
+ICOULD_DB          = os.path.join(_BASE, "icould.db")
 VOYAGE_MODEL       = "voyage-3.5"
 VOYAGE_DIMS        = 1024
 MIN_SCORE                = 50   # recalibrated for Voyage AI voyage-3.5 (was 65 for nomic-embed-text)
@@ -2181,10 +2182,43 @@ def api_welcome_data():
 
         quals = list(counts.keys())
 
+        cur.execute("SELECT COUNT(*) FROM courses WHERE is_active = 1")
+        total_courses = cur.fetchone()[0]
+
+        # Resolve campus pins using the same provider-id + substring-match logic
+        # that _resolve_campus / _build_card_row use for course cards.
+        cur.execute(
+            "SELECT DISTINCT provider_id FROM courses WHERE is_active = 1 AND provider_id IS NOT NULL"
+        )
+        provider_ids = [r[0] for r in cur.fetchall()]
+        _, campuses_by_provider = _load_campus_enrichment(conn, provider_ids)
+
+        cur.execute(
+            "SELECT campus, provider_id, ssa_code FROM courses WHERE is_active = 1"
+        )
+        seen = set()
+        campus_pins = []
+        for row in cur.fetchall():
+            lat, lng, campus_name = _resolve_campus(row["campus"], row["provider_id"], campuses_by_provider)
+            if lat is None:
+                continue
+            key = (round(lat, 5), round(lng, 5))
+            if key in seen:
+                continue
+            seen.add(key)
+            campus_pins.append({
+                "lat": lat, "lng": lng,
+                "ssa_code": row["ssa_code"],
+                "campus_name": campus_name,
+            })
+
         return jsonify({
-            "quals":       quals,
-            "ssa_codes":   ssa_codes,
-            "counts":      counts,
+            "quals":          quals,
+            "ssa_codes":      ssa_codes,
+            "counts":         counts,
+            "campus_pins":    campus_pins,
+            "total_courses":  total_courses,
+            "total_campuses": len(campus_pins),
             "institution": {
                 "full_name": INSTITUTION_FULL_NAME,
                 "abbrev":    INSTITUTION_NAME,
@@ -2694,6 +2728,26 @@ def course_detail(course_id):
     })
 
 
+def _icould_videos_for_job(job_id, limit=3):
+    """Return up to `limit` high-confidence iCould videos for a job."""
+    try:
+        ic = sqlite3.connect(ICOULD_DB)
+        ic.row_factory = sqlite3.Row
+        rows = ic.execute("""
+            SELECT v.video_id, v.title, v.thumbnail_url
+            FROM icould_job_links l
+            JOIN icould_videos v ON v.video_id = l.video_id
+            WHERE l.job_id = ? AND l.confidence_v2 = 'high'
+            ORDER BY l.id
+            LIMIT ?
+        """, (job_id, limit)).fetchall()
+        ic.close()
+        return [{"video_id": r["video_id"], "title": r["title"],
+                 "thumbnail_url": r["thumbnail_url"]} for r in rows]
+    except Exception:
+        return []
+
+
 @app.get("/jobs/<int:job_id>")
 def job_detail(job_id):
     db = job_row(str(job_id))
@@ -2717,6 +2771,7 @@ def job_detail(job_id):
         "career_progression":  db.get("progression") or "",
         "has_progression":     bool(db.get("overview")),
         "employer_text":       lmi_employer_text(job_id),
+        "icould_videos":       _icould_videos_for_job(job_id),
     })
 
 

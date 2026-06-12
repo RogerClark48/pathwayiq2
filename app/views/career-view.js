@@ -14,7 +14,22 @@ const SIGNPOST_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 
 export function CareerView(slices = {}) {
   const { courseId, courseTitle, ssa, pathways, backRoute, backSlices } = slices;
+  return buildCareerEl({
+    courseId, courseTitle, ssa, pathways,
+    onBack:     () => go(backRoute, backSlices || {}),
+    onJobClick: (job) => go('job-detail', {
+      jobId:      job.job_id,
+      jobTitle:   job.title,
+      ssa,
+      backRoute:  'career-view',
+      backSlices: { courseId, courseTitle, ssa, pathways, backRoute, backSlices },
+    }),
+  });
+}
 
+// ── Element builder — used by both CareerView (routing) and desktop split ─────
+
+export function buildCareerEl({ courseId, courseTitle, ssa, pathways, onBack, onJobClick }) {
   const s        = subject(ssa);
   const p        = pathways || {};
   const jobById  = Object.fromEntries((p.curated_jobs || []).map(j => [j.job_id, j]));
@@ -28,7 +43,7 @@ export function CareerView(slices = {}) {
 
   const el = document.createElement('div');
   el.className = 'view view-career';
-  el.style.setProperty('--sub', s.colour); // drives header bg + lane tints
+  el.style.setProperty('--sub', s.colour);
 
   // ── Coloured header ───────────────────────────────────────────────────────
   const head = document.createElement('div');
@@ -44,7 +59,7 @@ export function CareerView(slices = {}) {
           <polyline points="15 18 9 12 15 6"/>
         </svg>
       </button>
-      <button class="ic cv-finn" aria-label="Back to Finn">
+      <button class="ic cv-finn" aria-label="Back to chat">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -54,9 +69,7 @@ export function CareerView(slices = {}) {
     <h4>Where this could lead</h4>
     <div class="sub">From ${courseTitle} · ${totalRoles} role${totalRoles !== 1 ? 's' : ''}</div>`;
 
-  head.querySelector('.cv-back').addEventListener('click', () =>
-    go(backRoute, backSlices || {}));
-
+  head.querySelector('.cv-back').addEventListener('click', onBack);
   head.querySelector('.cv-finn').addEventListener('click', () => go('chat-first'));
 
   el.appendChild(head);
@@ -110,13 +123,7 @@ export function CareerView(slices = {}) {
         chip.textContent = job.title;
         if (ji === 0) chip.className = 'lead';
 
-        chip.addEventListener('click', () => go('job-detail', {
-          jobId:      job.job_id,
-          jobTitle:   job.title,
-          ssa,                       // so the role header inherits the course's subject colour
-          backRoute:  'career-view',
-          backSlices: { courseId, courseTitle, ssa, pathways, backRoute, backSlices },
-        }));
+        chip.addEventListener('click', () => onJobClick(job));
 
         rolesEl.appendChild(chip);
       });

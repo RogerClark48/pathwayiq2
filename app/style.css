@@ -2091,6 +2091,19 @@ body {
   display: grid;
   place-items: center;
 }
+.la-top-actions { display: flex; align-items: center; gap: 8px; }
+.la-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--bg-2, #F3F0E8);
+  border: 1px solid var(--hair, #E7E2D8);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.la-icon-btn svg { width: 17px; height: 17px; stroke: var(--ink-2, #3C4F63); fill: none; stroke-width: 2; }
+
 .la-top::after {
   content: "";
   position: absolute;
@@ -2271,8 +2284,8 @@ body {
 .ck-course .cc-top .wm{position:absolute;right:-14px;top:-12px;opacity:.18}
 .ck-course .cc-top .wm svg{width:72px;height:72px;stroke:#fff;stroke-width:1.5}
 .ck-course .lvl{position:absolute;top:10px;right:11px;background:#fff;color:var(--sub,#2A4A9C);font-family:var(--font-mono);font-weight:600;font-size:10px;padding:2px 7px;border-radius:6px}
-.ck-course .cc-tt{position:relative;z-index:1}
-.ck-course .cc-tt b{font-family:var(--font-display);font-weight:700;font-size:13.5px;line-height:1.15;display:block;max-width:82%}
+.ck-course .cc-tt{position:relative;z-index:1;padding-right:128px}
+.ck-course .cc-tt b{font-family:var(--font-display);font-weight:700;font-size:13.5px;line-height:1.15;display:block;max-width:100%}
 .ck-course .cc-tt span{font-family:var(--font-mono);font-size:10px;opacity:.92;display:block;margin-top:4px}
 .ck-course .cc-bd{padding:10px 13px}
 .ck-course .cc-chips{display:flex;gap:6px;align-items:center}
@@ -2297,6 +2310,9 @@ body {
    and is not modified. Left panel content wired in next phase.
 ══════════════════════════════════════════════════════════════════════════ */
 @media (min-width: 768px) {
+
+  /* Chat-jump buttons only needed on mobile — desktop chat is always visible */
+  .cd-finn, .jd-finn, .cv-finn { display: none; }
 
   html {
     background: var(--bg, #FBFAF6); /* remove dark phone-tray backdrop */
@@ -2858,6 +2874,17 @@ body {
   cursor: pointer;
 }
 .jd-cta-head .chev { margin-left: auto; font-size: 11px; color: var(--muted); }
+.jd-cta-head svg { fill: none; margin-left: auto; flex-shrink: 0; stroke: var(--muted); }
+
+@media (min-width: 768px) {
+  .jd-cta-head {
+    justify-content: center;
+    font-size: 15px;
+    padding: 16px 14px;
+    gap: 10px;
+  }
+  .jd-cta-head svg { margin-left: 0; }
+}
 .jd-cta-body {
   padding: 0 14px 14px;
   max-height: 280px;
@@ -2939,3 +2966,489 @@ body {
   margin: 0;
 }
 .jd-climb-prose p + p { margin-top: 10px; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Desktop landing hero  (≥1200px) — fills #desktop-right on welcome view
+   When real GMIoT photography/video arrives, swap .la-hero-map for a <video>
+   or <img> with object-fit:cover behind the same .la-hero-overlay.
+════════════════════════════════════════════════════════════════════════════ */
+.la-hero {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+.la-hero-map {
+  position: absolute;
+  inset: 0;
+}
+.la-hero-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.la-hero-hl {
+  align-self: flex-start;
+  margin: 20px 20px 0;
+  background: rgba(251,250,246,0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--hair);
+  border-radius: 14px;
+  padding: 12px 18px;
+  pointer-events: auto;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.la-hero-hl span {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.la-hero-hl em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  letter-spacing: 0.03em;
+}
+.la-hero-tiles {
+  padding: 14px 16px 20px;
+  background: rgba(251,250,246,0.93);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid var(--hair);
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+/* Calm (non-interactive) hero pin — no hover/active states needed */
+.la-hero-pin { pointer-events: none; }
+
+/* Stagger-in animation for hero pins — respects prefers-reduced-motion */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes ffpin-in {
+    from { opacity: 0; transform: scale(0.3) translateY(16px); }
+    to   { opacity: 1; transform: scale(1)   translateY(0); }
+  }
+  .la-hero-pin {
+    animation: ffpin-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+}
+
+/* ── Welcome qualifications video card (bottom of left rail) ────────────── */
+.la-qual-video {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: var(--surface, #fff);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: box-shadow .15s, transform .15s;
+}
+.la-qual-video:hover {
+  box-shadow: 0 3px 12px rgba(15,29,46,.12);
+  transform: translateY(-1px);
+}
+.la-qual-video-thumb {
+  flex-shrink: 0;
+  width: 84px;
+  aspect-ratio: 4/3;
+  border-radius: 7px;
+  background: #1a1a1a center/cover no-repeat;
+  position: relative;
+  overflow: hidden;
+}
+.la-qual-video-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.la-qual-video-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.la-qual-video-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ff-blue);
+}
+.la-qual-video-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Desktop browse split  (≥1200px)
+   .dbx = flex row that fills #desktop-right; list column left, Leaflet right
+════════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 1200px) {
+  .dbx {
+    display: flex;
+    height: 100%;
+    overflow: hidden;
+  }
+  .dbx-list {
+    width: 430px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--hair);
+  }
+  .dbx-lh {
+    flex: none;
+    padding: 16px 20px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--hair);
+  }
+  /* Remove side padding from refine row — .dbx-lh wrapper provides it */
+  .dbx-lh .ccx-refine { padding: 10px 0 0; }
+  .dbx-rows {
+    flex: 1;
+    overflow-y: auto;
+    padding: 13px 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .dbx-rows > * { flex-shrink: 0; }
+  .dbx-map {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    position: relative;
+  }
+}
+
+/* ── Active / hover pin lift ─────────────────────────────────────────────── */
+.ffpin { transition: transform 0.15s ease; }
+.ffpin.is-active { transform: scale(1.25) translateY(-4px); }
+
+/* ── Card states in the list column ─────────────────────────────────────── */
+.dbx-rows .ck.ck-course {
+  transition: box-shadow 0.14s ease, transform 0.14s ease;
+}
+.dbx-rows .ck.ck-course:hover {
+  box-shadow: 0 4px 16px rgba(15,29,46,.15);
+  transform: translateY(-1px);
+}
+.dbx-rows .ck.ck-course.is-selected {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sub) 45%, transparent), var(--shadow-sm);
+}
+/* Selected card hover: keep ring, add lift */
+.dbx-rows .ck.ck-course.is-selected:hover {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sub) 45%, transparent), 0 4px 16px rgba(15,29,46,.15);
+  transform: translateY(-1px);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Desktop course + career split  (≥1200px)
+   .dsx = flex row that fills #desktop-right; course detail left, career/role right
+════════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 1200px) {
+  /* Width cap — centre the shell with neutral gutters */
+  html { background: var(--bg-2); }
+  #app-shell {
+    max-width: 1440px;
+    margin-inline: auto;
+    width: 100%;
+    background: var(--bg);
+  }
+
+  .dsx {
+    display: flex;
+    height: 100%;
+    overflow: hidden;
+    position: relative; /* overlay + rail anchor (moved from .dsx-right) */
+  }
+  .dsx-left {
+    width: 480px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    border-right: 1px solid var(--hair);
+  }
+  .dsx-right {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* Career view fills the right pane via flex */
+  .dsx-right > .view {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+  }
+}
+
+/* ── Role profile drawer ─────────────────────────────────────────────────────
+   Inset 34px from left — career lanes stay visible as a sliver behind the
+   rounded leading edge. Career view is never unmounted; scroll survives.
+──────────────────────────────────────────────────────────────────────────── */
+
+/* Redock rail — sits over the 34px sliver; hidden until drawer is open.
+   Anchored to .dsx so it can track the overlay's leading edge in both states. */
+.dsx-redock-rail {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 480px;  /* default: at the col-2/col-3 boundary, over the career sliver */
+  width: 34px;
+  z-index: 12;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-2);
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.dsx-redock-rail.is-visible { display: flex; }
+.dsx-redock-rail svg { opacity: 0.55; transition: opacity 0.15s; }
+.dsx-redock-rail:hover svg { opacity: 1; }
+/* Wide state: rail tracks the far-left sliver */
+.dsx.is-wide .dsx-redock-rail { left: 0; }
+
+/* Drawer overlay — slides in from the right, inset 34px into the career column.
+   Anchored to .dsx so it can widen over the course column in the wide state. */
+.dsx-role-overlay {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: calc(480px + 34px); right: 0;  /* default: 34px into career col */
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border-radius: 28px 0 0 28px;
+  border-left: 1.5px solid rgba(255,255,255,.45);
+  box-shadow: -3px 0 0 rgba(255,255,255,.2), -4px 0 14px rgba(15,29,46,.18), -1px 0 3px rgba(15,29,46,.1);
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+              left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.dsx-role-overlay.is-open { transform: translateX(0); }
+.dsx-role-overlay > .view { flex: 1; min-height: 0; height: auto; }
+
+/* Wide state: overlay covers workspace; role + courses side by side */
+.dsx.is-wide .dsx-role-overlay {
+  left: 34px;
+  flex-direction: row;
+}
+.dsx.is-wide .dsx-role-overlay > .view {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Courses pane — slides in from the right inside the wide overlay */
+.dsx-courses-pane {
+  flex: none;
+  width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-left: 1px solid var(--hair);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.dsx.is-wide .dsx-courses-pane { width: 520px; }
+
+.dsx-courses-head {
+  flex: none;
+  padding: 20px 20px 14px;
+  border-bottom: 1px solid var(--hair);
+  background: var(--bg);
+}
+.dsx-courses-kicker {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.dsx-courses-role {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.dsx-courses-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+/* "‹ Careers" back pill — replaces circular icon button in drawer header */
+.jd-back-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(255,255,255,.18);
+  border: none;
+  border-radius: 999px;
+  padding: 6px 10px 6px 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  letter-spacing: -.01em;
+}
+.jd-back-pill svg { stroke: #fff; fill: none; flex-shrink: 0; }
+.jd-back-pill:hover { background: rgba(255,255,255,.28); }
+
+/* ── iCould video row ──────────────────────────────────────────────────────── */
+.jd-videos {
+  margin: 20px 0 4px;
+}
+.jd-videos-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+.jd-videos-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.jd-video-card {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.jd-video-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: var(--bg-2) center/cover no-repeat;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.jd-video-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: .85;
+  transition: opacity .15s;
+}
+.jd-video-card:hover .jd-video-play,
+.jd-video-card:focus .jd-video-play { opacity: 1; }
+.jd-video-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.jd-video-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.jd-video-attr {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── YouTube video modal ───────────────────────────────────────────────────── */
+.video-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.72);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.video-modal-panel {
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+}
+.video-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #111;
+  gap: 8px;
+}
+.video-modal-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.video-modal-close {
+  flex-shrink: 0;
+  background: rgba(255,255,255,.12);
+  border: none;
+  border-radius: 999px;
+  color: #e5e7eb;
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.video-modal-close:hover { background: rgba(255,255,255,.22); }
+.video-modal-frame {
+  width: 100%;
+  aspect-ratio: 16/9;
+  border: none;
+  display: block;
+}

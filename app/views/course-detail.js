@@ -5,6 +5,8 @@ import { state, isSaved, toggleSave, refreshSavedBadges } from '../state.js';
 import { logEvent }                                  from '../analytics.js';
 import { subject, subjectIconSvg }                   from '../subjects.js';
 import { renderProse }                               from '../dom.js';
+import { buildCareerEl }                             from './career-view.js';
+import { buildJobEl, loadCoursesInto }               from './job-detail.js';
 
 const MODE_LABELS = { FT: 'Full-time', PT: 'Part-time', 'FT/PT': 'Full or Part-time' };
 function modeLabel(m) { return m ? (MODE_LABELS[m] || m) : null; }
@@ -52,7 +54,11 @@ export function CourseDetailView(slices = {}) {
     })
     .then(d => {
       el.innerHTML = '';
-      renderDetail(el, d, courseId, courseTitle, backRoute);
+      if (window.innerWidth >= 1200 && d.pathways) {
+        buildSplit(el, d, courseId, courseTitle, backRoute);
+      } else {
+        renderDetail(el, d, courseId, courseTitle, backRoute);
+      }
     })
     .catch(err => {
       console.error('[course-detail]', err);
@@ -62,9 +68,135 @@ export function CourseDetailView(slices = {}) {
   return el;
 }
 
+// ── Desktop split — course left, career/role right (≥1200px) ─────────────────
+
+function buildSplit(el, d, courseId, courseTitle, backRoute) {
+  const dsx = document.createElement('div');
+  dsx.className = 'dsx';
+
+  const left = document.createElement('div');
+  left.className = 'dsx-left';
+
+  const right = document.createElement('div');
+  right.className = 'dsx-right';
+
+  dsx.appendChild(left);
+  dsx.appendChild(right);
+  el.appendChild(dsx);
+
+  // Course detail fills left pane; CTA bar hidden since career is always visible on right
+  renderDetail(left, d, courseId, courseTitle, backRoute, { hideCta: true });
+
+  // Career view mounts once and stays mounted — lanes always live underneath
+  right.appendChild(buildCareerEl({
+    courseId,
+    courseTitle: d.course_title,
+    ssa:         d.ssa_code,
+    pathways:    d.pathways,
+    onBack:      () => go(backRoute, backRoute === 'course-list' ? { courseList: state.courseList } : {}),
+    onJobClick:  showJob,
+  }));
+
+  // Rail and overlay anchored to .dsx so the overlay can widen across both columns
+  const rail = document.createElement('button');
+  rail.className = 'dsx-redock-rail';
+  rail.setAttribute('aria-label', 'Back to careers');
+  rail.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+    width="14" height="14" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
+  rail.addEventListener('click', hideJob);
+  dsx.appendChild(rail);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'dsx-role-overlay';
+  dsx.appendChild(overlay);
+
+  let currentJobId    = null;
+  let currentJobTitle = '';
+  let coursesLoaded   = false;
+  let coursesPaneEl   = null;
+
+  function showCourses() {
+    const isNew = !coursesPaneEl;
+
+    if (isNew) {
+      coursesPaneEl = document.createElement('div');
+      coursesPaneEl.className = 'dsx-courses-pane';
+
+      const head = document.createElement('div');
+      head.className = 'dsx-courses-head';
+
+      const kicker = document.createElement('span');
+      kicker.className = 'dsx-courses-kicker';
+      kicker.textContent = 'Courses that lead here';
+
+      const roleLabel = document.createElement('span');
+      roleLabel.className = 'dsx-courses-role';
+      roleLabel.textContent = `Routes to ${currentJobTitle}`;  // textContent — model output
+
+      head.appendChild(kicker);
+      head.appendChild(roleLabel);
+
+      const body = document.createElement('div');
+      body.className = 'dsx-courses-body';
+
+      coursesPaneEl.appendChild(head);
+      coursesPaneEl.appendChild(body);
+      overlay.appendChild(coursesPaneEl);
+    }
+
+    // rAF ensures browser paints pane at width:0 before is-wide triggers the expansion
+    requestAnimationFrame(() => dsx.classList.add('is-wide'));
+
+    if (!coursesLoaded) {
+      coursesLoaded = true;
+      // Fire fetch immediately (loading state is shown); pane will animate open in parallel
+      loadCoursesInto(coursesPaneEl.querySelector('.dsx-courses-body'), currentJobId);
+    }
+  }
+
+  function showJob(job) {
+    currentJobId    = job.job_id;
+    currentJobTitle = job.title;
+    coursesLoaded   = false;
+    coursesPaneEl   = null;
+
+    overlay.classList.remove('is-open');
+    dsx.classList.remove('is-wide');
+    overlay.innerHTML = '';
+
+    overlay.appendChild(buildJobEl({
+      jobId:          job.job_id,
+      jobTitle:       job.title,
+      ssa:            d.ssa_code,
+      accent:         subject(d.ssa_code).colour,
+      onBack:         hideJob,
+      backLabel:      'Hide',
+      onCoursesClick: showCourses,
+    }));
+
+    requestAnimationFrame(() => {
+      overlay.classList.add('is-open');
+      rail.classList.add('is-visible');
+    });
+  }
+
+  function hideJob() {
+    overlay.classList.remove('is-open');
+    rail.classList.remove('is-visible');
+    overlay.addEventListener('transitionend', (e) => {
+      if (e.propertyName === 'transform' && !overlay.classList.contains('is-open')) {
+        dsx.classList.remove('is-wide');
+        overlay.innerHTML = '';
+        coursesPaneEl = null;
+      }
+    }, { once: true });
+  }
+}
+
 // ── Render (called after fetch) ───────────────────────────────────────────────
 
-function renderDetail(el, d, courseId, courseTitle, backRoute) {
+function renderDetail(el, d, courseId, courseTitle, backRoute, opts = {}) {
   const s = subject(d.ssa_code);
 
   // Propagate subject colour to the whole view so cd-cta bullets inherit it
@@ -88,7 +220,7 @@ function renderDetail(el, d, courseId, courseTitle, backRoute) {
           <polyline points="15 18 9 12 15 6"/>
         </svg>
       </button>
-      <button class="ic cd-finn" aria-label="Back to Finn">
+      <button class="ic cd-finn" aria-label="Back to chat">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -117,7 +249,6 @@ function renderDetail(el, d, courseId, courseTitle, backRoute) {
 
   head.querySelector('.cd-back').addEventListener('click', () =>
     go(backRoute, backRoute === 'course-list' ? { courseList: state.courseList } : {}));
-
   head.querySelector('.cd-finn').addEventListener('click', () => go('chat-first'));
 
   const saveBtn = head.querySelector('.cd-save');
@@ -178,8 +309,8 @@ function renderDetail(el, d, courseId, courseTitle, backRoute) {
   notebook.appendChild(sheet);
   el.appendChild(notebook);
 
-  // ── Pinned career bar ─────────────────────────────────────────────────────
-  if (d.pathways) {
+  // ── Pinned career bar — hidden in split mode (career always visible on right) ──
+  if (d.pathways && !opts.hideCta) {
     const cta = document.createElement('div');
     cta.className = 'cd-cta';
 
