@@ -139,6 +139,13 @@ function renderDetail(el, d, jobId, jobTitle, onBack, accent, ssa, backLabel, on
 
   el.appendChild(head);
 
+  // Fired as soon as the profile loads, not on tab click — both are slow (~15s) Sonnet
+  // calls on a cold cache, so they need a head start before the user reaches the tab.
+  const insidePromise = d.overview
+    ? fetch(`/jobs/${jobId}/inside`).then(r => r.json()).catch(() => null)
+    : Promise.resolve(null);
+  const climbPromise = fetch(`/jobs/${jobId}/ladder`).then(r => r.json()).catch(() => null);
+
   // ── Notebook ──────────────────────────────────────────────────────────────
   const tabDefs = [
     { key: 'Overview', lazy: false, render: () => overviewPane(d) },
@@ -148,7 +155,10 @@ function renderDetail(el, d, jobId, jobTitle, onBack, accent, ssa, backLabel, on
     d.entry_routes
       ? { key: 'Get in', lazy: false, render: () => textPane(d.entry_routes) }
       : null,
-    { key: 'Climb', lazy: true, render: (pane) => loadClimb(pane, jobId) },
+    d.overview
+      ? { key: 'Inside', lazy: true, render: (pane) => loadInside(pane, insidePromise, jobId) }
+      : null,
+    { key: 'Climb', lazy: true, render: (pane) => loadClimb(pane, climbPromise, jobId) },
   ].filter(Boolean);
 
   const notebook = document.createElement('div');
@@ -419,16 +429,44 @@ function textPane(text) {
   return renderField(text);
 }
 
-// Lazy — receives the pane element to populate into.
-function loadClimb(pane, jobId) {
+// Lazy — receives the pane element and the fetch promise kicked off on profile load.
+function loadInside(pane, insidePromise, jobId) {
   const loading = document.createElement('p');
   loading.className = 'nb-body nb-muted';
   loading.textContent = 'Loading…';
   pane.appendChild(loading);
 
-  fetch(`/jobs/${jobId}/ladder`)
-    .then(r => r.json())
-    .catch(() => null)
+  insidePromise.then(d => {
+    loading.remove();
+    const sections = Array.isArray(d?.sections) ? d.sections : [];
+    if (!sections.length) {
+      const p = document.createElement('p');
+      p.className = 'nb-body nb-muted';
+      p.textContent = 'No inside view for this role yet.';
+      pane.appendChild(p);
+      return;
+    }
+    sections.forEach(({ heading, text }) => {
+      if (heading) {
+        const h = document.createElement('h6');
+        h.className = 'nb-label';
+        h.textContent = heading;
+        pane.appendChild(h);
+      }
+      if (text) pane.appendChild(renderProse(text));
+    });
+    logEvent('inside_open', 'job', jobId, null);
+  });
+}
+
+// Lazy — receives the pane element and the fetch promise kicked off on profile load.
+function loadClimb(pane, climbPromise, jobId) {
+  const loading = document.createElement('p');
+  loading.className = 'nb-body nb-muted';
+  loading.textContent = 'Loading…';
+  pane.appendChild(loading);
+
+  climbPromise
     .then(data => {
       loading.remove();
       const rungs = Array.isArray(data?.ladder) ? data.ladder : [];

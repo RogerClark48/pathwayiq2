@@ -1,7 +1,7 @@
 # FutureFinder — Claude Code Project Context
 
 **Active branch:** `visual-redesign` (current dev)
-**Railway production:** `futurefinder-v3` branch
+**Railway production:** `visual-redesign` branch (deploys directly on push; `futurefinder-v3` is a stale, unmaintained branch)
 
 ## What this project is
 

@@ -382,6 +382,59 @@ PROGRESSION_SYSTEM_PROMPT = (
     "Do not use markdown code blocks, backticks, or any text outside the JSON object itself."
 )
 
+INSIDE_SYSTEM_PROMPT = """You write the "Inside" section for a FutureFinder job profile -- a short,
+personal section that sits alongside the structural profile (overview, duties, entry routes,
+progression) and gives the reader the feeling of being inside this role day to day, not a report
+about it. It is grounded in the source content given to you, but covers different ground entirely
+-- physical setting and rhythm of the work, variation by employer size and specialism, what makes
+someone good at it beyond the credentials, what's frustrating, who tends to leave and where they
+go. Not every occupation has something honest to say on every one of those -- cover only what you
+can support.
+
+STRUCTURE. Write 4-6 short sections, each a couple of sentences, each with its own short heading
+(2-4 words, specific to that section's content, e.g. "Two worlds" or "What earns trust" -- not
+generic labels like "Overview" or "Section 1"). Pick the sections and order that fit this specific
+role; don't force a fixed template onto content that doesn't support it.
+
+VOICE. Write in second person, present tense -- put the reader inside the role rather than
+describing it from outside. "You're two hours into tracing a bug that only shows up on one
+customer's setup" reads as lived experience; "developers often spend time debugging" reads as a
+report about developers. This is a change of camera angle, not a change of honesty -- everything
+below about grounding and neutrality still applies to what you have the reader experience.
+
+HONESTY. Write only what a knowledgeable observer of the sector would recognise as broadly true --
+no invented characters, no fabricated specific incidents presented as historical fact (the
+immersive "you" scenarios are illustrative composites, not claims that this exact thing happened).
+Where something is a common industry perception rather than settled fact, frame it that way
+("you'll often hear that...", not "this is true of everyone"). Where it genuinely varies, name the
+variance rather than pick a side. No named employers unless they appear in the source content. No
+specific salary figures, hours, or credential claims -- those belong to other sections, not here.
+If you don't have honest material for a section, drop it rather than pad it.
+
+ENGAGEMENT. Be specific, not general -- "you're stood on site waiting for a decision that hasn't
+come down from someone three rungs up" reads; "sometimes there are delays" doesn't, and the
+specific version isn't more invented, it's just more true to how the thing is actually
+experienced. Use concrete sensory detail where you have it. Vary sentence length within a section
+-- mix short observations with longer explanatory ones.
+
+NEUTRALITY. Immerse the reader in the experience without telling them whether it's for them.
+"You'll notice the people who stick around tend to..." puts the reader inside a real pattern;
+"you'll thrive here if..." tips into recommending. No framing verbs ("a rewarding career for you",
+"a role you'll love"). If you cover who leaves and where they go, give more than one profile, not
+a single cautionary path. Test before finishing: could this same text sit in front of someone
+leaning toward the job and someone leaning away from it, without either feeling steered -- even
+though it's written in "you"?
+
+LENGTH. Short and personal, not a report -- roughly 200-300 words total across all sections. No
+bullet points within a section. It should read like a good careers adviser walking you through a
+day in your own shoes, not like a document.
+
+Ground everything in the source content below -- do not describe work, tools, settings, or
+progression the source content rules out or doesn't support.
+
+Respond with JSON only, no markdown code fences, in this exact shape:
+{"sections": [{"heading": "...", "text": "..."}, ...]}"""
+
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
@@ -412,7 +465,7 @@ _jpc_conn.execute("""
         explain_text   TEXT
     )
 """)
-for _col in ("courses_json TEXT", "explain_cache_version INTEGER", "courses_cache_version INTEGER", "ladder_json TEXT", "ladder_cache_version INTEGER"):
+for _col in ("courses_json TEXT", "explain_cache_version INTEGER", "courses_cache_version INTEGER", "ladder_json TEXT", "ladder_cache_version INTEGER", "inside_text TEXT", "inside_cache_version INTEGER"):
     try:
         _jpc_conn.execute(f"ALTER TABLE job_progression_cache ADD COLUMN {_col}")
     except Exception:
@@ -423,6 +476,7 @@ _jpc_conn.close()
 EXPLAIN_CACHE_VERSION  = 1  # bump when the explain prompt changes to force regeneration
 COURSES_CACHE_VERSION  = 3  # bump when the job_courses Haiku prompt changes
 LADDER_CACHE_VERSION   = 1  # bump when the climb prompt changes to force regeneration
+INSIDE_CACHE_VERSION   = 2  # bump when the "Inside" prompt changes to force regeneration
 
 CAUTION_DIVERGENCE_THRESHOLD  = 15  # domain% - skills% > this → caution flag
 CROSS_COLLECTION_MIN_SKILLS   = 72  # hard floor — connections below this are excluded
@@ -2993,6 +3047,87 @@ def job_explain(job_id):
 
     jobs_conn.close()
     return jsonify({"text": text})
+
+
+@app.get("/jobs/<int:job_id>/inside")
+def job_inside(job_id):
+    jobs_conn = sqlite3.connect(JOBS_DB)
+    jobs_conn.row_factory = sqlite3.Row
+
+    # Check cache
+    cached = jobs_conn.execute(
+        "SELECT inside_text, inside_cache_version FROM job_progression_cache "
+        "WHERE job_id = ? AND inside_text IS NOT NULL",
+        (job_id,)
+    ).fetchone()
+    if cached and cached["inside_cache_version"] == INSIDE_CACHE_VERSION:
+        jobs_conn.close()
+        print(f"[inside] job_id={job_id} cache hit (v{INSIDE_CACHE_VERSION})", flush=True)
+        return jsonify({"sections": json.loads(cached["inside_text"])})
+
+    job = jobs_conn.execute(
+        "SELECT id, title, overview, typical_duties, skills_required, progression, career_prospects "
+        "FROM jobs WHERE id = ?", (str(job_id),)
+    ).fetchone()
+    if not job or not job["overview"]:
+        jobs_conn.close()
+        return jsonify({"sections": None})
+
+    source_doc = (
+        f"## Overview\n\n{job['overview']}\n\n"
+        f"## Typical activities\n\n{job['typical_duties'] or ''}\n\n"
+        f"## Skills required\n\n{job['skills_required'] or ''}\n\n"
+        f"## Career progression\n\n{job['career_prospects'] or job['progression'] or ''}"
+    )
+    user_prompt = (
+        f"--- SOURCE CONTENT ---\n\n{source_doc}\n\n"
+        f"Write the Inside section now."
+    )
+
+    print(f"[inside] job_id={job_id} title={job['title']!r} — calling Sonnet", flush=True)
+    try:
+        resp = _anthropic_post({
+            "model":       SONNET_MODEL,
+            "max_tokens":  1200,
+            "temperature": 0.3,
+            "system":      INSIDE_SYSTEM_PROMPT,
+            "messages":    [{"role": "user", "content": user_prompt}],
+        }, call_site="inside", timeout=45.0)
+        raw = resp.json()["content"][0]["text"].strip()
+        if raw.startswith("```"):
+            raw = raw[raw.find("\n")+1:]
+            if raw.endswith("```"):
+                raw = raw[:-3].rstrip()
+        sections = json.loads(raw)["sections"]
+    except RateLimitError:
+        jobs_conn.close()
+        return jsonify({"sections": None})
+    except Exception as e:
+        print(f"[inside] Sonnet call failed ({e})", flush=True)
+        jobs_conn.close()
+        return jsonify({"sections": None})
+
+    sections_json = json.dumps(sections)
+    existing = jobs_conn.execute(
+        "SELECT job_id FROM job_progression_cache WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    try:
+        if existing:
+            jobs_conn.execute(
+                "UPDATE job_progression_cache SET inside_text = ?, inside_cache_version = ? WHERE job_id = ?",
+                (sections_json, INSIDE_CACHE_VERSION, job_id)
+            )
+        else:
+            jobs_conn.execute(
+                "INSERT INTO job_progression_cache (job_id, inside_text, inside_cache_version) VALUES (?, ?, ?)",
+                (job_id, sections_json, INSIDE_CACHE_VERSION)
+            )
+        jobs_conn.commit()
+    except Exception as e:
+        print(f"[inside] cache write failed ({e})", flush=True)
+
+    jobs_conn.close()
+    return jsonify({"sections": sections})
 
 
 # ---------------------------------------------------------------------------
