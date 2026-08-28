@@ -3,6 +3,7 @@
 import { state, unsaveItem, refreshSavedBadges } from '../state.js';
 import { go } from '../router.js';
 import { subject } from '../subjects.js';
+import { loadWelcomeData, cartoTileLayer } from '../api.js';
 
 const CLOSE_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
@@ -71,12 +72,10 @@ function buildMap(courseIds) {
   setTimeout(async () => {
     const L = window.L;
     if (!L) { wrap.style.display = 'none'; return; }
+    await loadWelcomeData().catch(() => {});
 
     const map = L.map(mapEl, { zoomControl: true });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
-      maxZoom: 19,
-    }).addTo(map);
+    cartoTileLayer({ maxZoom: 19 }).addTo(map);
 
     const markers = [];
 

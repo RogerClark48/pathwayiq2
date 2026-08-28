@@ -41,6 +41,7 @@ TOP_N_CANDIDATES         = 8
 SEARCH_TOP_N             = 8  # results per specified search (Stage 2+)
 
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+CARTO_API_KEY      = os.environ.get("CARTO_API_KEY", "")  # CARTO Basemaps raster tiles — passed to frontend via /api/welcome-data
 ANTHROPIC_URL      = "https://api.anthropic.com/v1/messages"
 HAIKU_MODEL        = "claude-haiku-4-5-20251001"
 SONNET_MODEL       = "claude-sonnet-4-6"
@@ -2277,6 +2278,9 @@ def api_welcome_data():
                 "full_name": INSTITUTION_FULL_NAME,
                 "abbrev":    INSTITUTION_NAME,
                 "region":    INSTITUTION_REGION,
+            },
+            "map": {
+                "carto_key": CARTO_API_KEY,
             },
         })
     finally:

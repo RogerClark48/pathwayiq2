@@ -27,6 +27,23 @@ export function getWelcomeData() {
   return _welcomeData;
 }
 
+// CARTO Basemaps raster tiles. Since Aug 2026 CARTO requires an API key on the
+// tile URL — keyless requests get an "API KEY REQUIRED" watermark. The key is
+// served (referrer-restricted, safe to expose) from /api/welcome-data → map.carto_key.
+// Callers should `await loadWelcomeData()` before invoking so the key is present.
+export function cartoTileLayer(opts = {}) {
+  const key = _welcomeData?.map?.carto_key || '';
+  const url = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+            + (key ? `?key=${encodeURIComponent(key)}` : '');
+  return window.L.tileLayer(url, {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>' +
+                 ' &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 20,
+    ...opts,
+  });
+}
+
 export async function postWelcomeChat(sessionId, message, savedItems) {
   const resp = await fetch('/chat/welcome', {
     method:  'POST',

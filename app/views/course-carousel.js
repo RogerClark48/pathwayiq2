@@ -4,6 +4,7 @@ import { go }        from '../router.js';
 import { logEvent }  from '../analytics.js';
 import { subject, subjectHex, subjectIconSvg } from '../subjects.js';
 import { bookmarkButton } from '../bookmarks.js';
+import { loadWelcomeData, cartoTileLayer } from '../api.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -413,9 +414,10 @@ function renderDeck(el, sorted, userLoc, backRoute) {
   buildCards(sorted);
 
   // ── Leaflet map ───────────────────────────────────────────────────────────
-  requestAnimationFrame(() => {
+  requestAnimationFrame(async () => {
     const mapEl = el.querySelector('#cc-map');
     if (!mapEl || typeof L === 'undefined') return;
+    await loadWelcomeData().catch(() => {});
 
     const first   = sorted[0];
     const initLat = first?.lat ?? 53.5;
@@ -435,14 +437,7 @@ function renderDeck(el, sorted, userLoc, backRoute) {
       tap:                false,
     });
 
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>' +
-                     ' &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 19,
-      }
-    ).addTo(_activeMap);
+    cartoTileLayer({ maxZoom: 19 }).addTo(_activeMap);
 
     // Map is now ready — place the first pin (setActivePin deferred silently during buildCards)
     setActivePin(activeCourses[currentIdx]);
@@ -655,9 +650,10 @@ function renderSplit(el, sorted, userLoc, backRoute) {
   }
 
   // ── Leaflet map init ──────────────────────────────────────────────────────
-  requestAnimationFrame(() => {
+  requestAnimationFrame(async () => {
     const mapEl = el.querySelector('#dbx-map');
     if (!mapEl || typeof L === 'undefined') return;
+    await loadWelcomeData().catch(() => {});
 
     const first = sorted[0];
     _activeMap = L.map(mapEl, {
@@ -673,14 +669,7 @@ function renderSplit(el, sorted, userLoc, backRoute) {
       keyboard:           false,
     });
 
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>' +
-                     ' &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 19,
-      }
-    ).addTo(_activeMap);
+    cartoTileLayer({ maxZoom: 19 }).addTo(_activeMap);
 
     if (userLoc) {
       L.circleMarker([userLoc.lat, userLoc.lng], {

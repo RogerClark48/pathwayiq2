@@ -36,6 +36,7 @@ The AI persona is **Finn** — a conversational guide who interviews users to un
 | `ANTHROPIC_API_KEY` | Sonnet + Haiku — all runtime LLM calls |
 | `VOYAGE_API_KEY` | Voyage AI — runtime query embedding |
 | `SKILLS_ENGLAND_API_KEY` | Data pipeline only — no runtime calls |
+| `CARTO_API_KEY` | CARTO Basemaps raster tiles — served to frontend via `/api/welcome-data` → `map.carto_key`; keyless tiles show an "API KEY REQUIRED" watermark since Aug 2026 |
 
 ---
 

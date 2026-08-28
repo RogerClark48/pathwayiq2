@@ -2,7 +2,7 @@
 
 import { state, resetSession } from '../state.js';
 import { go }             from '../router.js';
-import { loadWelcomeData } from '../api.js';
+import { loadWelcomeData, cartoTileLayer } from '../api.js';
 import { subject, subjectHex, subjectIconSvg } from '../subjects.js';
 
 const STARTER_CHIPS = [
@@ -82,14 +82,7 @@ function buildHero(data, seedChat) {
       tap:                false,
     });
 
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>' +
-                     ' &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 19,
-      }
-    ).addTo(_heroMap);
+    cartoTileLayer({ maxZoom: 19 }).addTo(_heroMap);
 
     const bounds = [];
     campusPins.forEach((pin, i) => {
